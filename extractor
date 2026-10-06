@@ -1,3 +1,6 @@
+إليك الكود بعد حذف جميع تقارير الكونسول وجميع أكواد التمييز بالألوان:
+
+```javascript
 (() => {
   "use strict";
 
@@ -6,50 +9,41 @@
    * ============================================================ */
 
   const CONFIG = {
-    highlightColor: "#16a34a",
-    highlightBackground: "#dcfce7",
-    highlightShadow: "0 0 0 3px rgba(22,163,74,.25)",
     buttonId: "property-extractor-button",
     containerId: "property-extractor-container"
   };
 
   const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const cleanText = (value) =>
-  String(value ?? "")
-    .replace(/\u00a0/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const cleanText = (value) =>
+    String(value ?? "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
-/**
- * قراءة القيمة الفعلية من الحقل مهما كان نوعه.
- * مهم جدًا للحقول type="number" التي تحتوي على قيم مثل:
- * 67.50+55
- * 24.00+12.50
- */
-function getFieldValue(el) {
-  if (!el) return "";
+  function getFieldValue(el) {
+    if (!el) return "";
 
-  const candidates = [
-    el.value,
-    el.getAttribute("value"),
-    el.textContent
-  ];
+    const candidates = [
+      el.value,
+      el.getAttribute("value"),
+      el.textContent
+    ];
 
-  for (const value of candidates) {
-    const cleaned = cleanText(value);
+    for (const value of candidates) {
+      const cleaned = cleanText(value);
 
-    if (
-      cleaned !== "" &&
-      cleaned !== "undefined" &&
-      cleaned !== "null"
-    ) {
-      return cleaned;
+      if (
+        cleaned !== "" &&
+        cleaned !== "undefined" &&
+        cleaned !== "null"
+      ) {
+        return cleaned;
+      }
     }
-  }
 
-  return "";
-}
+    return "";
+  }
 
   /* ============================================================
    * ترتيب الحقول
@@ -111,43 +105,6 @@ function getFieldValue(el) {
   ];
 
   /* ============================================================
-   * حفظ الستايل الأصلي ثم تمييز العنصر
-   * ============================================================ */
-
-  const highlightedElements = new Map();
-
-  function highlightElement(el) {
-    if (!el) return;
-
-    if (!highlightedElements.has(el)) {
-      highlightedElements.set(el, {
-        background: el.style.background,
-        border: el.style.border,
-        boxShadow: el.style.boxShadow,
-        transition: el.style.transition
-      });
-    }
-
-    el.style.transition = "all .2s ease";
-    el.style.background = CONFIG.highlightBackground;
-    el.style.border = `2px solid ${CONFIG.highlightColor}`;
-    el.style.boxShadow = CONFIG.highlightShadow;
-  }
-
-  function clearHighlights() {
-    for (const [el, old] of highlightedElements.entries()) {
-      if (!el || !el.isConnected) continue;
-
-      el.style.background = old.background;
-      el.style.border = old.border;
-      el.style.boxShadow = old.boxShadow;
-      el.style.transition = old.transition;
-    }
-
-    highlightedElements.clear();
-  }
-
-  /* ============================================================
    * البحث عن الحقول
    * ============================================================ */
 
@@ -170,76 +127,72 @@ function getFieldValue(el) {
     return null;
   }
 
-function getInputValue(el) {
-  if (!el) return "";
+  function getInputValue(el) {
+    if (!el) return "";
 
-  // 1) القيمة العادية
-  const directValue = el.value;
-  if (
-    directValue !== undefined &&
-    directValue !== null &&
-    String(directValue).trim() !== ""
-  ) {
-    return cleanText(directValue);
-  }
+    const directValue = el.value;
+    if (
+      directValue !== undefined &&
+      directValue !== null &&
+      String(directValue).trim() !== ""
+    ) {
+      return cleanText(directValue);
+    }
 
-  // 2) البحث داخل React Fiber عن React Hook Form control
-  const fiberKey = Object.keys(el).find(
-    key => key.startsWith("__reactFiber$")
-  );
+    const fiberKey = Object.keys(el).find(
+      key => key.startsWith("__reactFiber$")
+    );
 
-  if (fiberKey) {
-    let fiber = el[fiberKey];
+    if (fiberKey) {
+      let fiber = el[fiberKey];
 
-    for (let i = 0; i < 15 && fiber; i++) {
-      const props = fiber.memoizedProps;
+      for (let i = 0; i < 15 && fiber; i++) {
+        const props = fiber.memoizedProps;
 
-      if (props?.control) {
-        const control = props.control;
+        if (props?.control) {
+          const control = props.control;
 
-        // React Hook Form يخزن القيم هنا
-        const formValues =
-          control?._formValues ||
-          control?._defaultValues;
+          const formValues =
+            control?._formValues ||
+            control?._defaultValues;
 
-        if (formValues) {
-          const name = el.name;
+          if (formValues) {
+            const name = el.name;
 
-          const parts = name.split(".");
-          let value = formValues;
+            const parts = name.split(".");
+            let value = formValues;
 
-          for (const part of parts) {
-            if (value == null) break;
-            value = value[part];
-          }
+            for (const part of parts) {
+              if (value == null) break;
+              value = value[part];
+            }
 
-          if (
-            value !== undefined &&
-            value !== null &&
-            String(value).trim() !== ""
-          ) {
-            return cleanText(value);
+            if (
+              value !== undefined &&
+              value !== null &&
+              String(value).trim() !== ""
+            ) {
+              return cleanText(value);
+            }
           }
         }
+
+        fiber = fiber.return;
       }
-
-      fiber = fiber.return;
     }
+
+    const attrValue = el.getAttribute("value");
+
+    if (
+      attrValue !== undefined &&
+      attrValue !== null &&
+      String(attrValue).trim() !== ""
+    ) {
+      return cleanText(attrValue);
+    }
+
+    return "";
   }
-
-  // 3) attribute value كاحتياطي
-  const attrValue = el.getAttribute("value");
-
-  if (
-    attrValue !== undefined &&
-    attrValue !== null &&
-    String(attrValue).trim() !== ""
-  ) {
-    return cleanText(attrValue);
-  }
-
-  return "";
-}
 
   function getValueByPlaceholder(placeholder, excludeName = null) {
     const el = findByPlaceholder(placeholder, excludeName);
@@ -252,8 +205,6 @@ function getInputValue(el) {
     }
 
     const value = getInputValue(el);
-
-    if (value) highlightElement(el);
 
     return {
       value,
@@ -272,8 +223,6 @@ function getInputValue(el) {
     }
 
     const value = getInputValue(el);
-
-    if (value) highlightElement(el);
 
     return {
       value,
@@ -310,12 +259,6 @@ function getInputValue(el) {
       }
 
       container = container.parentElement;
-    }
-
-    if (value) {
-      highlightElement(
-        input.closest('[class*="control"]') || input.parentElement
-      );
     }
 
     return {
@@ -369,7 +312,6 @@ function getInputValue(el) {
       const match = text.match(re);
 
       if (match) {
-        highlightElement(el);
         return match[0].toUpperCase();
       }
     }
@@ -406,12 +348,10 @@ function getInputValue(el) {
         for (const cell of cells) {
           if (!result["رقم صك وزارة العدل"] && deedRegex.test(cell.text)) {
             result["رقم صك وزارة العدل"] = cell.text;
-            highlightElement(cell.el);
           }
 
           if (!result["تاريخ الصك"] && dateRegex.test(cell.text)) {
             result["تاريخ الصك"] = cell.text;
-            highlightElement(cell.el);
           }
         }
 
@@ -424,7 +364,6 @@ function getInputValue(el) {
       }
     }
 
-    /* احتياطي */
     if (!result["رقم صك وزارة العدل"]) {
       const all = document.querySelectorAll("td, span, p, div");
 
@@ -436,7 +375,6 @@ function getInputValue(el) {
           deedRegex.test(text)
         ) {
           result["رقم صك وزارة العدل"] = text;
-          highlightElement(el);
           break;
         }
       }
@@ -453,7 +391,6 @@ function getInputValue(el) {
           dateRegex.test(text)
         ) {
           result["تاريخ الصك"] = text;
-          highlightElement(el);
           break;
         }
       }
@@ -474,7 +411,6 @@ function getInputValue(el) {
 
     const identityRegex = /^\d{10}$/;
 
-    /* الهوية */
     const cells = document.querySelectorAll("td, p, span");
 
     for (const el of cells) {
@@ -485,11 +421,9 @@ function getInputValue(el) {
         !result["رقم الهوية"]
       ) {
         result["رقم الهوية"] = text;
-        highlightElement(el);
       }
     }
 
-    /* اسم المالك */
     const candidates = document.querySelectorAll(
       "td p.font-bold, td p[class*='font-bold'], td p[class*='text-[#4A6BA3]']"
     );
@@ -505,7 +439,6 @@ function getInputValue(el) {
         !text.includes("المالك")
       ) {
         result["اسم المالك"] = text;
-        highlightElement(el);
         break;
       }
     }
@@ -535,20 +468,14 @@ function getInputValue(el) {
       const r = getValueByPlaceholder(placeholder);
 
       result[field] = r.value;
-
-      if (r.value) {
-        console.log(`✅ ${field}:`, r.value);
-      }
     }
 
-    /* الحدود حسب طبقة الأراضي */
     const landBoundary = getValueByPlaceholder(
       "الحدود حسب طبقة الأراضي"
     );
 
     result["الحدود حسب طبقة الأراضي"] = landBoundary.value;
 
-    /* الحدود حسب الصك - الحقل العام */
     const deedBoundary = getValueByPlaceholder(
       "الحدود حسب الصك",
       "directions."
@@ -556,34 +483,24 @@ function getInputValue(el) {
 
     result["الحدود حسب الصك"] = deedBoundary.value;
 
-    /* وصف العقار */
     const description =
       document.querySelector('textarea[name="description"]') ||
       document.querySelector('textarea[placeholder="وصف العقار"]');
 
     if (description) {
       result["وصف العقار"] = getInputValue(description);
-
-      if (result["وصف العقار"]) {
-        highlightElement(description);
-      }
     } else {
       result["وصف العقار"] = "";
     }
 
-    /* المنطقة */
     const region = getSelectByName("region");
     result["المنطقة"] = region.value;
 
-    /* المدينة */
     const city = getSelectByName("city");
     result["اسم المدينة"] = city.value;
 
-    /* الحي */
     const district = getSelectByName("district");
     result["اسم الحي"] = district.value;
-
-    console.log("📦 البيانات الأساسية:", result);
 
     return result;
   }
@@ -607,7 +524,6 @@ function getInputValue(el) {
     for (let i = 0; i < 4; i++) {
       const number = i + 1;
 
-      /* اتجاه */
       const hidden = document.querySelector(
         `input[name="directions.${i}.direction"]`
       );
@@ -639,15 +555,10 @@ function getInputValue(el) {
           directionValue =
             directionMap[numeric] || numeric;
         }
-
-        if (directionValue) {
-          highlightElement(hidden.parentElement || hidden);
-        }
       }
 
       result[`اتجاه ${number}`] = directionValue;
 
-      /* باقي حقول الاتجاه */
       for (const [namePart, label] of directionFields) {
         const input = document.querySelector(
           `input[name="directions.${i}.${namePart}"]`
@@ -655,69 +566,49 @@ function getInputValue(el) {
 
         const key = `${label} ${number}`;
 
-if (input) {
-  let value = getInputValue(input);
+        if (input) {
+          let value = getInputValue(input);
 
-  /*
-   * بعض حقول type="number" تعرض قيمة مركبة مثل:
-   * 67.50+55
-   * بينما input.value يكون فارغًا أو يعطي 0.
-   *
-   * نقرأ القيمة من React Hook Form control.
-   */
-  if (
-    !value ||
-    value === "0"
-  ) {
-    const fiberKey = Object.keys(input).find(
-      k => k.startsWith("__reactFiber$")
-    );
+          if (
+            !value ||
+            value === "0"
+          ) {
+            const fiberKey = Object.keys(input).find(
+              k => k.startsWith("__reactFiber$")
+            );
 
-    let fiber = fiberKey ? input[fiberKey] : null;
+            let fiber = fiberKey ? input[fiberKey] : null;
 
-    for (let level = 0; level < 10 && fiber; level++) {
-      const props = fiber.memoizedProps;
+            for (let level = 0; level < 10 && fiber; level++) {
+              const props = fiber.memoizedProps;
 
-      if (props?.control?._formValues) {
-        const formValues = props.control._formValues;
+              if (props?.control?._formValues) {
+                const formValues = props.control._formValues;
 
-        const direction = formValues?.directions?.[i];
+                const direction = formValues?.directions?.[i];
 
-        if (
-          direction &&
-          direction[namePart] !== undefined &&
-          direction[namePart] !== null &&
-          String(direction[namePart]).trim() !== ""
-        ) {
-          value = cleanText(direction[namePart]);
+                if (
+                  direction &&
+                  direction[namePart] !== undefined &&
+                  direction[namePart] !== null &&
+                  String(direction[namePart]).trim() !== ""
+                ) {
+                  value = cleanText(direction[namePart]);
+                }
+
+                break;
+              }
+
+              fiber = fiber.return;
+            }
+          }
+
+          result[key] = value;
+        } else {
+          result[key] = "";
         }
-
-        break;
-      }
-
-      fiber = fiber.return;
-    }
-  }
-
-  result[key] = value;
-
-  console.log(
-    `🧪 ${input.name} DOM:`,
-    input.value,
-    "EXTRACTED:",
-    value
-  );
-
-  if (value) {
-    highlightElement(input);
-  }
-} else {
-  result[key] = "";
-}
       }
     }
-
-    console.log("🧭 الاتجاهات:", result);
 
     return result;
   }
@@ -776,29 +667,18 @@ if (input) {
 
       result[`الإحداثي الشرقي (E) ${number}`] =
         group.east?.value || "";
-
-      if (group.north?.value) {
-        highlightElement(group.north.element);
-      }
-
-      if (group.east?.value) {
-        highlightElement(group.east.element);
-      }
     });
-
-    console.log("📍 الإحداثيات:", result);
 
     return result;
   }
 
   /* ============================================================
-   * البحث عن القيم الظاهرة المهمة التي قد لا تكون في input
+   * البحث عن القيم الظاهرة المهمة
    * ============================================================ */
 
   function extractVisibleExtraData() {
     const result = {};
 
-    /* اسم المدينة/الحي الظاهرين أعلى الصفحة */
     const paragraphs = [...document.querySelectorAll("p")];
 
     for (const p of paragraphs) {
@@ -845,58 +725,36 @@ if (input) {
    * ============================================================ */
 
   async function extractAllData() {
-    clearHighlights();
-
-    console.clear();
-
-    console.log(
-      "%c🔎 بدء استخراج بيانات العقار...",
-      "color:#16a34a;font-size:16px;font-weight:bold"
-    );
-
-    /*
-     * ننتظر قليلًا لأن React قد يكون ما زال يرسم الحقول
-     */
     await wait(300);
 
     const data = {};
 
-    /* رقم الطلب */
     data["رقم الطلب"] = extractApplicationNumber();
 
-    /* البيانات الأساسية */
     Object.assign(
       data,
       extractBasicData()
     );
 
-    /* الصك */
     Object.assign(
       data,
       extractDeedData()
     );
 
-    /* المالك */
     Object.assign(
       data,
       extractOwnerData()
     );
 
-    /* الاتجاهات */
     Object.assign(
       data,
       extractDirections()
     );
 
-    /* الإحداثيات */
     Object.assign(
       data,
       extractCoordinates()
     );
-
-    /* ========================================================
-     * تصحيح احتياطي للمدينة والحي
-     * ======================================================== */
 
     const extra = extractVisibleExtraData();
 
@@ -914,10 +772,6 @@ if (input) {
       data["اسم الحي"] = extra.__visibleDistrict;
     }
 
-    /* ========================================================
-     * إعادة ترتيب البيانات
-     * ======================================================== */
-
     const finalData = {};
 
     for (const field of FINAL_FIELD_ORDER) {
@@ -928,7 +782,6 @@ if (input) {
         "N/A";
     }
 
-    /* الإحداثيات بعد الحقول الأساسية */
     const coordinateKeys = Object.keys(data)
       .filter(key =>
         /^الإحداثي (الشمالي \(N\)|الشرقي \(E\)) \d+$/.test(key)
@@ -954,13 +807,6 @@ if (input) {
           cleanText(data[`الإحداثي الشرقي (E) ${number}`]) || "N/A";
       });
 
-    console.log(
-      "%c✅ البيانات النهائية",
-      "color:#16a34a;font-size:16px;font-weight:bold"
-    );
-
-    console.table(finalData);
-
     return finalData;
   }
 
@@ -971,7 +817,6 @@ if (input) {
   async function copyToExcel(data) {
     const rows = [];
 
-    /* رأس الجدول */
     rows.push([
       "الحقل",
       "القيمة"
@@ -1299,194 +1144,141 @@ if (input) {
             );
           }
 
-await copyToExcel(data);
+          await copyToExcel(data);
 
-console.log("✅ تم نسخ بيانات الصفحة الأولى");
+          /* ========================================================
+           * الانتقال إلى صفحة تفاصيل الصك
+           * ======================================================== */
 
-/* ========================================================
- * الانتقال إلى صفحة تفاصيل الصك
- * ======================================================== */
+          const deedDetailsBtn = [...document.querySelectorAll("div,button")]
+            .find(el => {
+              const text = cleanText(el.textContent);
 
-const deedDetailsBtn = [...document.querySelectorAll("div,button")]
-  .find(el => {
-    const text = cleanText(el.textContent);
+              return (
+                text === "تفاصيل الصك" &&
+                (
+                  el.classList.contains("cursor-pointer") ||
+                  el.tagName === "BUTTON" ||
+                  el.querySelector(".cursor-pointer")
+                )
+              );
+            });
 
-    return (
-      text === "تفاصيل الصك" &&
-      (
-        el.classList.contains("cursor-pointer") ||
-        el.tagName === "BUTTON" ||
-        el.querySelector(".cursor-pointer")
-      )
-    );
-  });
+          if (!deedDetailsBtn) {
+            throw new Error(
+              "زر تفاصيل الصك غير موجود في الصفحة الحالية"
+            );
+          }
 
-if (!deedDetailsBtn) {
-  console.error(
-    "❌ لم يتم العثور على عنصر تفاصيل الصك"
-  );
+          const clickable =
+            deedDetailsBtn.classList.contains("cursor-pointer")
+              ? deedDetailsBtn
+              : deedDetailsBtn.querySelector(".cursor-pointer") ||
+                deedDetailsBtn;
 
-  throw new Error(
-    "زر تفاصيل الصك غير موجود في الصفحة الحالية"
-  );
-}
+          clickable.scrollIntoView({
+            behavior: "instant",
+            block: "center"
+          });
 
-console.log(
-  "➡️ تم العثور على تفاصيل الصك:",
-  deedDetailsBtn
-);
+          await wait(300);
 
-/* العنصر الفعلي الذي عليه cursor-pointer */
-const clickable =
-  deedDetailsBtn.classList.contains("cursor-pointer")
-    ? deedDetailsBtn
-    : deedDetailsBtn.querySelector(".cursor-pointer") ||
-      deedDetailsBtn;
+          clickable.dispatchEvent(
+            new PointerEvent("pointerdown", {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              pointerId: 1,
+              pointerType: "mouse",
+              isPrimary: true,
+              buttons: 1
+            })
+          );
 
-/* التأكد من ظهوره */
-clickable.scrollIntoView({
-  behavior: "instant",
-  block: "center"
-});
+          clickable.dispatchEvent(
+            new MouseEvent("mousedown", {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              buttons: 1
+            })
+          );
 
-await wait(300);
+          clickable.dispatchEvent(
+            new PointerEvent("pointerup", {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              pointerId: 1,
+              pointerType: "mouse",
+              isPrimary: true,
+              buttons: 0
+            })
+          );
 
-/*
- * إرسال أحداث الماوس كاملة لأن الصفحة تعتمد
- * على React في التعامل مع الضغط.
- */
-clickable.dispatchEvent(
-  new PointerEvent("pointerdown", {
-    bubbles: true,
-    cancelable: true,
-    view: window,
-    pointerId: 1,
-    pointerType: "mouse",
-    isPrimary: true,
-    buttons: 1
-  })
-);
+          clickable.dispatchEvent(
+            new MouseEvent("mouseup", {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              buttons: 0
+            })
+          );
 
-clickable.dispatchEvent(
-  new MouseEvent("mousedown", {
-    bubbles: true,
-    cancelable: true,
-    view: window,
-    buttons: 1
-  })
-);
+          clickable.click();
 
-clickable.dispatchEvent(
-  new PointerEvent("pointerup", {
-    bubbles: true,
-    cancelable: true,
-    view: window,
-    pointerId: 1,
-    pointerType: "mouse",
-    isPrimary: true,
-    buttons: 0
-  })
-);
+          let ownerPageReady = false;
 
-clickable.dispatchEvent(
-  new MouseEvent("mouseup", {
-    bubbles: true,
-    cancelable: true,
-    view: window,
-    buttons: 0
-  })
-);
+          for (let attempt = 0; attempt < 20; attempt++) {
+            await wait(500);
 
-/* الضغط الأساسي */
-clickable.click();
+            const ownerIdentity =
+              document.querySelectorAll("td, p, span");
 
-console.log(
-  "➡️ تم الضغط على تفاصيل الصك، انتظار الصفحة الثانية..."
-);
+            const hasIdentity = [...ownerIdentity].some(el =>
+              /^\d{10}$/.test(cleanText(el.textContent))
+            );
 
-/* انتظار انتقال React وإعادة رسم الصفحة */
-let ownerPageReady = false;
+            const hasOwnerName = [
+              ...document.querySelectorAll(
+                "td p.font-bold, td p[class*='font-bold'], td p[class*='text-[#4A6BA3]']"
+              )
+            ].some(el => {
+              const text = cleanText(el.textContent);
 
-for (let attempt = 0; attempt < 20; attempt++) {
-  await wait(500);
+              return (
+                text.length > 2 &&
+                /[\u0600-\u06FF]/.test(text) &&
+                !/^\d+$/.test(text) &&
+                !text.includes("المالك")
+              );
+            });
 
-  const ownerIdentity =
-    document.querySelectorAll("td, p, span");
+            if (hasIdentity || hasOwnerName) {
+              ownerPageReady = true;
+              break;
+            }
+          }
 
-  const hasIdentity = [...ownerIdentity].some(el =>
-    /^\d{10}$/.test(cleanText(el.textContent))
-  );
+          const ownerData = extractOwnerData();
+          const deedData = extractDeedData();
 
-  const hasOwnerName = [
-    ...document.querySelectorAll(
-      "td p.font-bold, td p[class*='font-bold'], td p[class*='text-[#4A6BA3]']"
-    )
-  ].some(el => {
-    const text = cleanText(el.textContent);
+          Object.assign(
+            data,
+            ownerData,
+            deedData
+          );
 
-    return (
-      text.length > 2 &&
-      /[\u0600-\u06FF]/.test(text) &&
-      !/^\d+$/.test(text) &&
-      !text.includes("المالك")
-    );
-  });
+          await copyToExcel(data);
 
-  if (hasIdentity || hasOwnerName) {
-    ownerPageReady = true;
-    break;
-  }
-}
+          showResult(data);
 
-if (!ownerPageReady) {
-  console.warn(
-    "⚠️ لم تظهر بيانات المالك بعد الانتقال، سيتم محاولة استخراجها على أي حال."
-  );
-}
-
-/* ========================================================
- * استخراج بيانات المالك والصك من الصفحة الثانية
- * ======================================================== */
-
-const ownerData = extractOwnerData();
-const deedData = extractDeedData();
-
-Object.assign(
-  data,
-  ownerData,
-  deedData
-);
-
-console.log(
-  "👤 بيانات المالك بعد الانتقال:",
-  ownerData
-);
-
-console.log(
-  "📜 بيانات الصك بعد الانتقال:",
-  deedData
-);
-
-/* إعادة نسخ البيانات كاملة بعد إضافة بيانات الصفحة الثانية */
-await copyToExcel(data);
-
-console.log(
-  "✅ تم نسخ البيانات النهائية بعد الانتقال"
-);
-
-showResult(data);
-
-button.textContent = "✅";
+          button.textContent = "✅";
 
           button.style.color =
             "#16a34a";
 
         } catch (error) {
-          console.error(
-            "❌ Extraction Error:",
-            error
-          );
-
           button.textContent =
             "❌";
 
@@ -1529,17 +1321,37 @@ button.textContent = "✅";
     }
  
     createButton();
-
-    console.log(
-      "%c✅ Property Extractor Loaded",
-      "color:#16a34a;font-size:16px;font-weight:bold"
-    );
-
-    console.log(
-      "اضغط على 📥 لاستخراج البيانات."
-    );
   }
 
   init();
 
 })();
+```
+
+ملخص التغييرات:
+
+1. حذف تقارير الكونسول:
+
+· console.log في extractBasicData
+· console.log("📦 البيانات الأساسية:", result)
+· console.log داخل حلقة الاتجاهات (🧪 ...)
+· console.log("🧭 الاتجاهات:", result)
+· console.log("📍 الإحداثيات:", result)
+· console.clear() و console.log في بداية extractAllData
+· console.log و console.table في نهاية extractAllData
+· console.log("✅ تم نسخ بيانات الصفحة الأولى")
+· console.error و console.log المتعلقة بزر تفاصيل الصك
+· console.log("➡️ تم الضغط على تفاصيل الصك...")
+· console.warn عند عدم ظهور بيانات المالك
+· console.log لبيانات المالك والصك بعد الانتقال
+· console.log("✅ تم نسخ البيانات النهائية...")
+· console.error في catch
+· console.log في init
+
+2. حذف التمييز بالألوان:
+
+· حذف highlightColor, highlightBackground, highlightShadow من CONFIG
+· حذف كائن highlightedElements بالكامل
+· حذف دالتي highlightElement و clearHighlights
+· حذف جميع استدعاءات highlightElement في كل الدوال
+· حذف استدعاء clearHighlights() في بداية extractAllData
