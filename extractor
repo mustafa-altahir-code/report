@@ -2,15 +2,58 @@
   "use strict";
 
   /* ============================================================
-   * التعبيرات النمطية والثوابت
+   * إعدادات
    * ============================================================ */
-  const APPLICATION_NUMBER_RE = /\bDU\d+\b/i;
-  const DEED_NUM_RE = /^\d+[\/\\]\d+$/;
-  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-  const IDENTITY_RE = /^\d{10}$/;
-  const ARABIC_RE = /[\u0600-\u06FF]/;
-  const COORD_N_RE = /^الإحداثي الشمالي \(N\) (\d+)$/;
-  const COORD_E_RE = /^الإحداثي الشرقي \(E\) (\d+)$/;
+
+  const CONFIG = {
+    highlightColor: "#16a34a",
+    highlightBackground: "#dcfce7",
+    highlightShadow: "0 0 0 3px rgba(22,163,74,.25)",
+    buttonId: "property-extractor-button",
+    containerId: "property-extractor-container"
+  };
+
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const cleanText = (value) =>
+  String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * قراءة القيمة الفعلية من الحقل مهما كان نوعه.
+ * مهم جدًا للحقول type="number" التي تحتوي على قيم مثل:
+ * 67.50+55
+ * 24.00+12.50
+ */
+function getFieldValue(el) {
+  if (!el) return "";
+
+  const candidates = [
+    el.value,
+    el.getAttribute("value"),
+    el.textContent
+  ];
+
+  for (const value of candidates) {
+    const cleaned = cleanText(value);
+
+    if (
+      cleaned !== "" &&
+      cleaned !== "undefined" &&
+      cleaned !== "null"
+    ) {
+      return cleaned;
+    }
+  }
+
+  return "";
+}
+
+  /* ============================================================
+   * ترتيب الحقول
+   * ============================================================ */
 
   const FINAL_FIELD_ORDER = [
     "رقم الطلب",
@@ -18,15 +61,20 @@
     "تاريخ الصك",
     "اسم المالك",
     "رقم الهوية",
+
     "رقم السجل العقاري",
     "رقم القطعة بالمخطط",
     "رقم المخطط",
     "رقم البلوك",
-    "اسم الحي",
+
+    "المنطقة",
     "اسم المدينة",
+    "اسم الحي",
+
     "الحدود حسب طبقة الأراضي",
     "الحدود حسب الصك",
     "وصف العقار",
+
     "اتجاه 1",
     "الحدود حسب الصك 1",
     "الحدود حسب الطبيعة 1",
@@ -34,6 +82,7 @@
     "الأبعاد حسب الصك (المجموع) 1",
     "الأبعاد حسب طبقة الأراضي (طول الضلع) 1",
     "الأبعاد حسب طبقة الأراضي (المجموع) 1",
+
     "اتجاه 2",
     "الحدود حسب الصك 2",
     "الحدود حسب الطبيعة 2",
@@ -41,6 +90,7 @@
     "الأبعاد حسب الصك (المجموع) 2",
     "الأبعاد حسب طبقة الأراضي (طول الضلع) 2",
     "الأبعاد حسب طبقة الأراضي (المجموع) 2",
+
     "اتجاه 3",
     "الحدود حسب الصك 3",
     "الحدود حسب الطبيعة 3",
@@ -48,6 +98,7 @@
     "الأبعاد حسب الصك (المجموع) 3",
     "الأبعاد حسب طبقة الأراضي (طول الضلع) 3",
     "الأبعاد حسب طبقة الأراضي (المجموع) 3",
+
     "اتجاه 4",
     "الحدود حسب الصك 4",
     "الحدود حسب الطبيعة 4",
@@ -55,603 +106,355 @@
     "الأبعاد حسب الصك (المجموع) 4",
     "الأبعاد حسب طبقة الأراضي (طول الضلع) 4",
     "الأبعاد حسب طبقة الأراضي (المجموع) 4",
+
     "النطاق الجغرافي لإسقاط مركاتور المستعرض العالمي"
   ];
 
   /* ============================================================
-   * الدوال المساعدة
+   * حفظ الستايل الأصلي ثم تمييز العنصر
    * ============================================================ */
-  const cleanText = (value) =>
-    String(value ?? "")
-      .replace(/\u00a0/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
 
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const highlightedElements = new Map();
 
-  function findInputByPlaceholder(placeholderText, excludeNamePart = null) {
-    const inputs = document.querySelectorAll("input, textarea");
-    for (const el of inputs) {
-      const ph = cleanText(el.placeholder || el.getAttribute("placeholder") || "");
-      if (ph === placeholderText || ph.includes(placeholderText)) {
-        if (excludeNamePart && (el.name || "").includes(excludeNamePart)) {
-          continue;
-        }
-        return el;
-      }
+  function highlightElement(el) {
+    if (!el) return;
+
+    if (!highlightedElements.has(el)) {
+      highlightedElements.set(el, {
+        background: el.style.background,
+        border: el.style.border,
+        boxShadow: el.style.boxShadow,
+        transition: el.style.transition
+      });
     }
-    return null;
+
+    el.style.transition = "all .2s ease";
+    el.style.background = CONFIG.highlightBackground;
+    el.style.border = `2px solid ${CONFIG.highlightColor}`;
+    el.style.boxShadow = CONFIG.highlightShadow;
+  }
+
+  function clearHighlights() {
+    for (const [el, old] of highlightedElements.entries()) {
+      if (!el || !el.isConnected) continue;
+
+      el.style.background = old.background;
+      el.style.border = old.border;
+      el.style.boxShadow = old.boxShadow;
+      el.style.transition = old.transition;
+    }
+
+    highlightedElements.clear();
   }
 
   /* ============================================================
-   * دوال الاستخراج الذكية والمحدثة
+   * البحث عن الحقول
    * ============================================================ */
 
-  /**
-   * استخراج رقم الطلب (DU...)
-   */
-  function extractApplicationNumber() {
-    const selectors = [
-      "div.my-6.flex.justify-between:nth-child(5) span.uppercase",
-      "div.my-6.flex.justify-between span.uppercase",
-      "span.uppercase.text-\\[12px\\]",
-      "span.uppercase",
-      "div.inner-container span.uppercase"
-    ];
+  function findByPlaceholder(text, excludeName = null) {
+    const elements = document.querySelectorAll("input, textarea");
 
-    for (const sel of selectors) {
-      try {
-        const el = document.querySelector(sel);
-        if (el) {
-          const text = cleanText(el.textContent);
-          const match = text.match(APPLICATION_NUMBER_RE);
-          if (match) return match[0].toUpperCase();
-        }
-      } catch (e) {}
+    for (const el of elements) {
+      const placeholder = cleanText(
+        el.getAttribute("placeholder") || el.placeholder || ""
+      );
+
+      if (
+        (placeholder === text || placeholder.includes(text)) &&
+        (!excludeName || !(el.name || "").includes(excludeName))
+      ) {
+        return el;
+      }
     }
 
-    const elements = document.querySelectorAll("span, p, div, td");
+    return null;
+  }
+
+function getInputValue(el) {
+  if (!el) return "";
+
+  // 1) القيمة العادية
+  const directValue = el.value;
+  if (
+    directValue !== undefined &&
+    directValue !== null &&
+    String(directValue).trim() !== ""
+  ) {
+    return cleanText(directValue);
+  }
+
+  // 2) البحث داخل React Fiber عن React Hook Form control
+  const fiberKey = Object.keys(el).find(
+    key => key.startsWith("__reactFiber$")
+  );
+
+  if (fiberKey) {
+    let fiber = el[fiberKey];
+
+    for (let i = 0; i < 15 && fiber; i++) {
+      const props = fiber.memoizedProps;
+
+      if (props?.control) {
+        const control = props.control;
+
+        // React Hook Form يخزن القيم هنا
+        const formValues =
+          control?._formValues ||
+          control?._defaultValues;
+
+        if (formValues) {
+          const name = el.name;
+
+          const parts = name.split(".");
+          let value = formValues;
+
+          for (const part of parts) {
+            if (value == null) break;
+            value = value[part];
+          }
+
+          if (
+            value !== undefined &&
+            value !== null &&
+            String(value).trim() !== ""
+          ) {
+            return cleanText(value);
+          }
+        }
+      }
+
+      fiber = fiber.return;
+    }
+  }
+
+  // 3) attribute value كاحتياطي
+  const attrValue = el.getAttribute("value");
+
+  if (
+    attrValue !== undefined &&
+    attrValue !== null &&
+    String(attrValue).trim() !== ""
+  ) {
+    return cleanText(attrValue);
+  }
+
+  return "";
+}
+
+  function getValueByPlaceholder(placeholder, excludeName = null) {
+    const el = findByPlaceholder(placeholder, excludeName);
+
+    if (!el) {
+      return {
+        value: "",
+        element: null
+      };
+    }
+
+    const value = getInputValue(el);
+
+    if (value) highlightElement(el);
+
+    return {
+      value,
+      element: el
+    };
+  }
+
+  function getValueByName(name) {
+    const el = document.querySelector(`[name="${CSS.escape(name)}"]`);
+
+    if (!el) {
+      return {
+        value: "",
+        element: null
+      };
+    }
+
+    const value = getInputValue(el);
+
+    if (value) highlightElement(el);
+
+    return {
+      value,
+      element: el
+    };
+  }
+
+  /* ============================================================
+   * React Select
+   * ============================================================ */
+
+  function getReactSelectValue(input) {
+    if (!input) {
+      return {
+        value: "",
+        element: null
+      };
+    }
+
+    let container =
+      input.closest('[class*="control"]') ||
+      input.parentElement;
+
+    let value = "";
+
+    for (let i = 0; i < 6 && container; i++) {
+      const singleValue =
+        container.querySelector('[class*="singleValue"]') ||
+        container.querySelector('[class*="single-value"]');
+
+      if (singleValue) {
+        value = cleanText(singleValue.textContent);
+        if (value) break;
+      }
+
+      container = container.parentElement;
+    }
+
+    if (value) {
+      highlightElement(
+        input.closest('[class*="control"]') || input.parentElement
+      );
+    }
+
+    return {
+      value,
+      element: input
+    };
+  }
+
+  function getSelectByName(name) {
+    const input = document.querySelector(`input[name="${CSS.escape(name)}"]`);
+
+    if (!input) {
+      return {
+        value: "",
+        element: null
+      };
+    }
+
+    return getReactSelectValue(input);
+  }
+
+  function getSelectById(id) {
+    const input = document.getElementById(id);
+
+    if (!input) {
+      return {
+        value: "",
+        element: null
+      };
+    }
+
+    return getReactSelectValue(input);
+  }
+
+  /* ============================================================
+   * رقم الطلب
+   * ============================================================ */
+
+  function extractApplicationNumber() {
+    const re = /\bDU\d+\b/i;
+
+    const elements = document.querySelectorAll(
+      "span, p, div, td, h1, h2, h3"
+    );
+
     for (const el of elements) {
-      const txt = el.textContent || "";
-      if (txt.length < 150 && APPLICATION_NUMBER_RE.test(txt)) {
-        const match = cleanText(txt).match(APPLICATION_NUMBER_RE);
-        if (match) return match[0].toUpperCase();
+      const text = cleanText(el.textContent);
+
+      if (text.length > 200) continue;
+
+      const match = text.match(re);
+
+      if (match) {
+        highlightElement(el);
+        return match[0].toUpperCase();
       }
     }
 
     return "";
   }
 
-  /**
-   * استخراج بيانات الصك: رقم صك وزارة العدل وتاريخ الصك
-   */
+  /* ============================================================
+   * بيانات الصك
+   * ============================================================ */
+
   function extractDeedData() {
-    const data = {
+    const result = {
       "رقم صك وزارة العدل": "",
       "تاريخ الصك": ""
     };
 
-    const tables = document.querySelectorAll(
-      "table.borderTable-new, table[class*='borderTable-new'], div.mt-2 table, table"
-    );
+    const deedRegex = /^\d+[\/\\]\d+$/;
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+    const tables = document.querySelectorAll("table");
 
     for (const table of tables) {
-      const isNewBorderTable = (table.className || "").includes("borderTable-new");
-      const rows = table.querySelectorAll("tbody tr, tr");
+      const rows = table.querySelectorAll("tr");
 
       for (const row of rows) {
-        const cells = [...row.querySelectorAll("td")]
-          .map((c) => cleanText(c.textContent))
-          .filter(Boolean);
+        const cells = [...row.querySelectorAll("td, th")]
+          .map(cell => ({
+            text: cleanText(cell.textContent),
+            el: cell
+          }))
+          .filter(x => x.text);
 
-        if (!cells.length) continue;
-
-        const dateIndex = cells.findIndex((v) => DATE_RE.test(v));
-        const deedIndex = cells.findIndex((v) => DEED_NUM_RE.test(v));
-
-        if (deedIndex !== -1 && !data["رقم صك وزارة العدل"]) {
-          data["رقم صك وزارة العدل"] = cells[deedIndex];
-        }
-        if (dateIndex !== -1 && !data["تاريخ الصك"]) {
-          data["تاريخ الصك"] = cells[dateIndex];
-        }
-
-        if (isNewBorderTable) {
-          if (!data["رقم صك وزارة العدل"] && cells[0]) {
-            data["رقم صك وزارة العدل"] = cells[0];
+        for (const cell of cells) {
+          if (!result["رقم صك وزارة العدل"] && deedRegex.test(cell.text)) {
+            result["رقم صك وزارة العدل"] = cell.text;
+            highlightElement(cell.el);
           }
-          if (!data["تاريخ الصك"] && cells[1]) {
-            data["تاريخ الصك"] = cells[1];
+
+          if (!result["تاريخ الصك"] && dateRegex.test(cell.text)) {
+            result["تاريخ الصك"] = cell.text;
+            highlightElement(cell.el);
           }
         }
 
-        if (data["رقم صك وزارة العدل"] && data["تاريخ الصك"]) {
-          return data;
+        if (
+          result["رقم صك وزارة العدل"] &&
+          result["تاريخ الصك"]
+        ) {
+          return result;
         }
       }
     }
 
-    if (!data["رقم صك وزارة العدل"]) {
-      for (const el of document.querySelectorAll("td, span, p, div")) {
-        const txt = cleanText(el.textContent);
-        if (txt.length < 50 && DEED_NUM_RE.test(txt) && !txt.includes("14") && !txt.includes("202")) {
-          data["رقم صك وزارة العدل"] = txt;
+    /* احتياطي */
+    if (!result["رقم صك وزارة العدل"]) {
+      const all = document.querySelectorAll("td, span, p, div");
+
+      for (const el of all) {
+        const text = cleanText(el.textContent);
+
+        if (
+          text.length < 50 &&
+          deedRegex.test(text)
+        ) {
+          result["رقم صك وزارة العدل"] = text;
+          highlightElement(el);
           break;
         }
       }
     }
 
-    if (!data["تاريخ الصك"]) {
-      for (const el of document.querySelectorAll("td, span, p, div")) {
-        const txt = cleanText(el.textContent);
-        if (txt.length < 30 && DATE_RE.test(txt)) {
-          data["تاريخ الصك"] = txt;
+    if (!result["تاريخ الصك"]) {
+      const all = document.querySelectorAll("td, span, p, div");
+
+      for (const el of all) {
+        const text = cleanText(el.textContent);
+
+        if (
+          text.length < 30 &&
+          dateRegex.test(text)
+        ) {
+          result["تاريخ الصك"] = text;
+          highlightElement(el);
           break;
-        }
-      }
-    }
-
-    return data;
-  }
-
-  /**
-   * استخراج بيانات المالك: اسم المالك ورقم الهوية
-   */
-  function extractOwnerData() {
-    const data = {
-      "اسم المالك": "",
-      "رقم الهوية": ""
-    };
-
-    const tables = document.querySelectorAll(
-      "div.pb-6 table, table.borderTable, table[class*='borderTable']"
-    );
-
-    for (const table of tables) {
-      if ((table.className || "").includes("borderTable-new")) continue;
-
-      const boldP = table.querySelector(
-        "td p.font-bold, td p[class*='font-bold'], td p[class*='text-[#4A6BA3]']"
-      );
-      if (boldP) {
-        const txt = cleanText(boldP.textContent);
-        if (txt && ARABIC_RE.test(txt) && !/^\d+$/.test(txt)) {
-          data["اسم المالك"] = txt;
-        }
-      }
-
-      const cells = table.querySelectorAll("td");
-      for (const cell of cells) {
-        const txt = cleanText(cell.textContent);
-        if (IDENTITY_RE.test(txt)) {
-          data["رقم الهوية"] = txt;
-          break;
-        }
-      }
-
-      if (!data["اسم المالك"]) {
-        const rows = table.querySelectorAll("tbody tr, tr");
-        for (const row of rows) {
-          const rowCells = row.querySelectorAll("td");
-          if (rowCells.length >= 1) {
-            const txt = cleanText(rowCells[0].textContent);
-            if (txt && ARABIC_RE.test(txt) && !/^\d+$/.test(txt) && !txt.includes("المالك")) {
-              data["اسم المالك"] = txt;
-              break;
-            }
-          }
-        }
-      }
-
-      if (data["اسم المالك"] && data["رقم الهوية"]) return data;
-    }
-
-    if (!data["اسم المالك"]) {
-      const candidates = document.querySelectorAll(
-        "td p.font-bold, td p[class*='text-[#4A6BA3]']"
-      );
-      for (const p of candidates) {
-        const txt = cleanText(p.textContent);
-        if (txt && txt.length > 5 && ARABIC_RE.test(txt) && !/^\d+$/.test(txt)) {
-          data["اسم المالك"] = txt;
-          break;
-        }
-      }
-    }
-
-    if (!data["رقم الهوية"]) {
-      const cells = document.querySelectorAll("td, p[class*='text-[12px]']");
-      for (const c of cells) {
-        const txt = cleanText(c.textContent);
-        if (IDENTITY_RE.test(txt)) {
-          data["رقم الهوية"] = txt;
-          break;
-        }
-      }
-    }
-
-    return data;
-  }
-
-  /**
-   * استخراج البيانات الأساسية للعقار
-   */
-  function extractBasicData() {
-    const data = {
-      "رقم السجل العقاري": "",
-      "رقم القطعة بالمخطط": "",
-      "رقم المخطط": "",
-      "رقم البلوك": "",
-      "اسم الحي": "",
-      "اسم المدينة": "",
-      "الحدود حسب طبقة الأراضي": "",
-      "الحدود حسب الصك": "",
-      "وصف العقار": "",
-      "النطاق الجغرافي لإسقاط مركاتور المستعرض العالمي": ""
-    };
-
-    const plotEl = findInputByPlaceholder("رقم القطعة بالمخطط");
-    if (plotEl) data["رقم القطعة بالمخطط"] = cleanText(plotEl.value);
-
-    const planEl = findInputByPlaceholder("رقم المخطط");
-    if (planEl) data["رقم المخطط"] = cleanText(planEl.value);
-
-    const blockEl = findInputByPlaceholder("رقم البلوك");
-    if (blockEl) data["رقم البلوك"] = cleanText(blockEl.value);
-
-    const registryEl = findInputByPlaceholder("رقم السجل العقاري");
-    if (registryEl) data["رقم السجل العقاري"] = cleanText(registryEl.value);
-
-    const landAreaEl = findInputByPlaceholder("الحدود حسب طبقة الأراضي");
-    if (landAreaEl) data["الحدود حسب طبقة الأراضي"] = cleanText(landAreaEl.value);
-
-    const deedAreaEl = findInputByPlaceholder("الحدود حسب الصك", "directions");
-    if (deedAreaEl) data["الحدود حسب الصك"] = cleanText(deedAreaEl.value);
-
-    const descEl = document.querySelector(
-      'textarea[name="description"], textarea[placeholder="وصف العقار"], textarea'
-    );
-    if (descEl) data["وصف العقار"] = cleanText(descEl.value);
-
-    const utmEl =
-      findInputByPlaceholder("النطاق الجغرافي لإسقاط مركاتور المستعرض العالمي") ||
-      findInputByPlaceholder("مركاتور");
-    if (utmEl) data["النطاق الجغرافي لإسقاط مركاتور المستعرض العالمي"] = cleanText(utmEl.value);
-
-    const labels = document.querySelectorAll("label, span, div, p");
-    for (const label of labels) {
-      const txt = cleanText(label.textContent);
-      if (!data["اسم المدينة"] && (txt === "المدينة" || txt === "اسم المدينة")) {
-        const parent = label.closest("div") || label.parentElement;
-        const sv = parent?.querySelector('[class*="singleValue"]');
-        if (sv) data["اسم المدينة"] = cleanText(sv.textContent);
-      }
-      if (!data["اسم الحي"] && (txt === "الحي" || txt === "اسم الحي")) {
-        const parent = label.closest("div") || label.parentElement;
-        const sv = parent?.querySelector('[class*="singleValue"]');
-        if (sv) data["اسم الحي"] = cleanText(sv.textContent);
-      }
-    }
-
-    if (!data["اسم المدينة"] || !data["اسم الحي"]) {
-      if (plotEl) {
-        const grid = plotEl.closest(".grid") || plotEl.closest('[class*="grid"]');
-        if (grid && grid.children) {
-          if (!data["اسم المدينة"] && grid.children.length > 5) {
-            const sv = grid.children[5].querySelector('[class*="singleValue"]');
-            if (sv) data["اسم المدينة"] = cleanText(sv.textContent);
-          }
-          if (!data["اسم الحي"] && grid.children.length > 6) {
-            const sv = grid.children[6].querySelector('[class*="singleValue"]');
-            if (sv) data["اسم الحي"] = cleanText(sv.textContent);
-          }
-        }
-      }
-    }
-
-    return data;
-  }
-
-  /**
-   * استخراج بيانات الاتجاهات الأربعة وأبعادها وحدودها
-   */
-  function extractDirections() {
-    const data = {};
-    const defaultDirections = ["الشمالية", "الجنوبية", "الشرقية", "الغربية"];
-
-    const fieldMap = {
-      deedBoundry: "الحدود حسب الصك",
-      asBuiltBoundry: "الحدود حسب الطبيعة",
-      deedDimentionLength: "الأبعاد حسب الصك (طول الضلع)",
-      deedDimentionTotal: "الأبعاد حسب الصك (المجموع)",
-      asBuiltDimentionLength: "الأبعاد حسب طبقة الأراضي (طول الضلع)",
-      asBuiltDimentionTotal: "الأبعاد حسب طبقة الأراضي (المجموع)"
-    };
-
-    for (let i = 0; i < 4; i++) {
-      const n = i + 1;
-      let dirName = "";
-
-      const anyInput = document.querySelector(`input[name*="directions.${i}."]`);
-      if (anyInput) {
-        const container =
-          anyInput.closest("div.grid") ||
-          anyInput.closest('[class*="grid"]') ||
-          anyInput.parentElement?.parentElement;
-        if (container) {
-          const sv = container.querySelector('[class*="singleValue"]');
-          if (sv) dirName = cleanText(sv.textContent);
-        }
-      }
-
-      if (!dirName) {
-        const hidden = document.querySelector(`input[name="directions.${i}.direction"]`);
-        if (hidden) {
-          const parent = hidden.parentElement;
-          const sv = parent?.querySelector('[class*="singleValue"]');
-          dirName = cleanText(sv?.textContent || hidden.value);
-        }
-      }
-
-      data[`اتجاه ${n}`] = dirName || defaultDirections[i] || "";
-
-      for (const [namePart, labelPrefix] of Object.entries(fieldMap)) {
-        const input = document.querySelector(`input[name="directions.${i}.${namePart}"]`);
-        data[`${labelPrefix} ${n}`] = input ? cleanText(input.value) : "";
-      }
-    }
-
-    return data;
-  }
-
-  /**
-   * استخراج الإحداثيات
-   */
-  function extractCoordinates() {
-    const data = {};
-    const groups = {};
-
-    document
-      .querySelectorAll('input[name*="coordinates."]')
-      .forEach((input) => {
-        const name = input.getAttribute("name") || "";
-        const match = name.match(
-          /coordinates\.(\d+)\.(northCordinate|eastCordinate|northCoordinate|eastCoordinate|north|east)/i
-        );
-        if (!match) return;
-
-        const index = Number(match[1]);
-        let type = match[2].toLowerCase();
-        if (type.includes("north")) type = "north";
-        else if (type.includes("east")) type = "east";
-
-        if (!groups[index]) groups[index] = {};
-        groups[index][type] = cleanText(input.value);
-      });
-
-    const indices = Object.keys(groups).map(Number).sort((a, b) => a - b);
-
-    indices.forEach((index, position) => {
-      const group = groups[index] || {};
-      const n = position + 1;
-      data[`الإحداثي الشمالي (N) ${n}`] = group.north || "";
-      data[`الإحداثي الشرقي (E) ${n}`] = group.east || "";
-    });
-
-    return data;
-  }
-
-  /**
-   * بناء كائن البيانات النهائي بنفس الترتيب المطلوب في نظام التقرير
-   */
-  function buildFinalData(allData) {
-    const coordMap = new Map();
-
-    for (const [key, value] of Object.entries(allData)) {
-      let match = key.match(COORD_N_RE);
-      if (match) {
-        const idx = Number(match[1]);
-        if (!coordMap.has(idx)) coordMap.set(idx, { n: "", e: "" });
-        coordMap.get(idx).n = value;
-        continue;
-      }
-
-      match = key.match(COORD_E_RE);
-      if (match) {
-        const idx = Number(match[1]);
-        if (!coordMap.has(idx)) coordMap.set(idx, { n: "", e: "" });
-        coordMap.get(idx).e = value;
-      }
-    }
-
-    const finalKeys = [...FINAL_FIELD_ORDER];
-
-    const sortedCoordIndices = [...coordMap.keys()].sort((a, b) => a - b);
-    sortedCoordIndices.forEach((idx) => {
-      finalKeys.push(`الإحداثي الشمالي (N) ${idx}`);
-      finalKeys.push(`الإحداثي الشرقي (E) ${idx}`);
-    });
-
-    const finalData = {};
-    finalKeys.forEach((k) => {
-      const value = allData[k];
-      finalData[k] = cleanText(value) || "N/A";
-    });
-
-    return finalData;
-  }
-
-  /**
-   * الاستخراج الشامل للبيانات من الصفحة مع إعادة المحاولة الذكية
-   */
-  async function extractAllData() {
-    const hasDeedTable = Boolean(document.querySelector('table[class*="borderTable"]'));
-    if (!hasDeedTable) {
-      const deedButton = [...document.querySelectorAll("button, div.cursor-pointer, a, span")].find(
-        (el) => cleanText(el.textContent) === "تفاصيل الصك"
-      );
-      if (deedButton) {
-        deedButton.click();
-        await wait(800);
-      }
-    }
-
-    const merged = {
-      "رقم الطلب": extractApplicationNumber(),
-      ...extractBasicData(),
-      ...extractDeedData(),
-      ...extractOwnerData(),
-      ...extractDirections(),
-      ...extractCoordinates()
-    };
-
-    const requiredCheck = [
-      "رقم صك وزارة العدل",
-      "تاريخ الصك",
-      "اسم المالك",
-      "رقم الهوية",
-      "رقم القطعة بالمخطط"
-    ];
-
-    let attempts = 0;
-    while (attempts < 3 && requiredCheck.some((f) => !cleanText(merged[f] || ""))) {
-      attempts++;
-      await wait(600);
-
-      const retryDeed = extractDeedData();
-      const retryOwner = extractOwnerData();
-      const retryBasic = extractBasicData();
-      const retryApp = { "رقم الطلب": extractApplicationNumber() };
-
-      for (const obj of [retryDeed, retryOwner, retryBasic, retryApp]) {
-        for (const [key, value] of Object.entries(obj)) {
-          if (cleanText(value) && !cleanText(merged[key] || "")) {
-            merged[key] = value;
-          }
-        }
-      }
-    }
-
-    return buildFinalData(merged);
-  }
-
-  /**
-   * النسخ إلى الحافظة بصيغة جدول تفصل بينه علامات Tab
-   */
-  async function copyToClipboard(data) {
-    const rows = [["الحقل", "القيمة"]];
-    for (const [key, value] of Object.entries(data)) {
-      rows.push([String(key ?? ""), String(value ?? "")]);
-    }
-
-    const text = rows
-      .map((row) =>
-        row
-          .map((value) =>
-            String(value).replace(/\t/g, " ").replace(/\r?\n/g, " ")
-          )
-          .join("\t")
-      )
-      .join("\r\n");
-
-    await navigator.clipboard.writeText(text);
-    return text;
-  }
-
-  /* ============================================================
-   * ⚡ دوال التعبئة التلقائية المحدثة (عند الضغط باليمين)
-   * ============================================================ */
-
-  /**
-   * تحليل بيانات الحافظة سواء بصيغة المسح الإنجليزي (CAD) أو بصيغة التقرير العربي
-   */
-  function parseClipboardData(text) {
-    if (!text) return null;
-
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-
-    const result = {
-      lot: "",
-      plan: "",
-      block: "",
-      zone: "",
-      area: "",
-      totalLength: "",
-      deedArea: "",
-      description: "",
-      coordinates: [],
-      directions: {}
-    };
-
-    let section = "header";
-
-    for (const line of lines) {
-      const upper = line.toUpperCase();
-
-      if (upper === "COORDINATES" || upper.includes("الإحداثيات")) {
-        section = "coordinates";
-        continue;
-      }
-      if (upper === "DIRECTION SUMMARY" || upper.includes("ملخص الاتجاهات")) {
-        section = "directions";
-        continue;
-      }
-
-      const parts = line.split(/\t+/).map((p) => p.trim()).filter(Boolean);
-
-      // قسم الإحداثيات
-      if (section === "coordinates") {
-        if (upper.startsWith("VERTEX") || upper.includes("النقطة")) continue;
-        if (parts.length >= 3) {
-          const n = parseFloat(parts[1]);
-          const e = parseFloat(parts[2]);
-          if (!isNaN(n) && !isNaN(e)) {
-            result.coordinates.push({ n: parts[1], e: parts[2] });
-          }
-        }
-        continue;
-      }
-
-      // قسم ملخص الاتجاهات
-      if (section === "directions") {
-        if (parts.length >= 2) {
-          const dir = parts[0].toUpperCase();
-          let value = parts.length > 2 ? parts.slice(1).join(" ") : parts[1];
-          const cleaned = value.replace(/\s*m\s*$/i, "").trim();
-          let total = cleaned;
-          let side = cleaned;
-
-          const totalMatch = cleaned.match(/=\s*([\d.]+)/);
-          if (totalMatch) {
-            total = totalMatch[1];
-            side = cleaned.split("=")[0].trim().replace(/\s*m\s*$/i, "").trim();
-          }
-
-          if (dir === "NORTH" || dir.includes("شمال")) result.directions.north = { side, total };
-          else if (dir === "EAST" || dir.includes("شرق")) result.directions.east = { side, total };
-          else if (dir === "SOUTH" || dir.includes("جنوب")) result.directions.south = { side, total };
-          else if (dir === "WEST" || dir.includes("غرب")) result.directions.west = { side, total };
-        }
-        continue;
-      }
-
-      // القسم العام (يدعم الإنجليزية والعربية)
-      if (parts.length >= 2) {
-        const key = parts[0].toUpperCase();
-        const value = parts[1];
-
-        if (key === "LOT" || key.includes("القطعة")) result.lot = value;
-        else if (key === "PLAN" || (key.includes("المخطط") && !key.includes("القطعة"))) result.plan = value;
-        else if (key === "BLOCK" || key.includes("البلوك")) result.block = value;
-        else if (key === "ZONE" || key.includes("النطاق") || key.includes("مركاتور")) result.zone = value;
-        else if (key === "AREA" || key.includes("طبقة الأراضي")) {
-          result.area = value.replace(/\s*m2?\s*$/i, "").trim();
-        } else if (key === "TOTAL LENGTH" || key === "TOTAL_LENGTH") {
-          result.totalLength = value.replace(/\s*m\s*$/i, "").trim();
-        } else if (key === "الحدود حسب الصك") {
-          result.deedArea = value;
-        } else if (key.includes("وصف العقار")) {
-          result.description = value;
         }
       }
     }
@@ -659,462 +462,1084 @@
     return result;
   }
 
-  /**
-   * تعيين قيمة لأي حقل مدخل في React مع تحديث الـ State الخاص به
-   */
-  function setNativeValue(el, value) {
-    if (!el) return false;
+  /* ============================================================
+   * بيانات المالك
+   * ============================================================ */
 
-    const stringValue = String(value ?? "");
-
-    el.focus();
-
-    // إذا كان الحقل يقبل أرقام فقط والقيمة تحتوي على نص أو رموز (مثل +)، نحول النوع إلى text
-    if (el.type === "number" && /[^\d.]/.test(stringValue)) {
-      el.type = "text";
-    }
-
-    const proto =
-      el instanceof HTMLTextAreaElement
-        ? HTMLTextAreaElement.prototype
-        : HTMLInputElement.prototype;
-
-    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-
-    // إعادة تعيين tracker القيمة الخاص بـ React
-    const tracker = el._valueTracker;
-    if (tracker) {
-      tracker.setValue(stringValue === "" ? "a" : "");
-    }
-
-    if (setter) {
-      setter.call(el, stringValue);
-    } else {
-      el.value = stringValue;
-    }
-
-    el.dispatchEvent(
-      new InputEvent("input", {
-        bubbles: true,
-        cancelable: true,
-        inputType: "insertText",
-        data: stringValue
-      })
-    );
-
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-    el.dispatchEvent(new Event("blur", { bubbles: true }));
-
-    return el.value === stringValue;
-  }
-
-  function key(el, k) {
-    const codes = { ArrowDown: 40, Enter: 13 };
-    const options = {
-      key: k,
-      code: k,
-      keyCode: codes[k] || 0,
-      which: codes[k] || 0,
-      bubbles: true,
-      cancelable: true
+  function extractOwnerData() {
+    const result = {
+      "اسم المالك": "",
+      "رقم الهوية": ""
     };
-    el.dispatchEvent(new KeyboardEvent("keydown", options));
-    el.dispatchEvent(new KeyboardEvent("keypress", options));
-    el.dispatchEvent(new KeyboardEvent("keyup", options));
-  }
 
-  /**
-   * العثور على عنصر React-Select الخاص بالاتجاه رقم index في التصميم الجديد
-   */
-  function getDirectionCombobox(index) {
-    // 1. عبر الحقول المدخلة للاتجاه نفسه
-    const anyInput = document.querySelector(`input[name*="directions.${index}."]`);
-    if (anyInput) {
-      let parent = anyInput.parentElement;
-      for (let step = 0; step < 6 && parent; step++) {
-        const cb = parent.querySelector('input[role="combobox"], [class*="control"] input');
-        if (cb) return cb;
-        parent = parent.parentElement;
+    const identityRegex = /^\d{10}$/;
+
+    /* الهوية */
+    const cells = document.querySelectorAll("td, p, span");
+
+    for (const el of cells) {
+      const text = cleanText(el.textContent);
+
+      if (
+        identityRegex.test(text) &&
+        !result["رقم الهوية"]
+      ) {
+        result["رقم الهوية"] = text;
+        highlightElement(el);
       }
     }
 
-    // 2. عبر حاوية قسم الاتجاهات (div:nth-child(4))
-    const dirContainer = document.querySelector(
-      "div.space-y-10 > div:nth-child(4), div[class*='space-y'] > div:nth-child(4)"
+    /* اسم المالك */
+    const candidates = document.querySelectorAll(
+      "td p.font-bold, td p[class*='font-bold'], td p[class*='text-[#4A6BA3]']"
     );
-    if (dirContainer) {
-      const rows = dirContainer.querySelectorAll(":scope > div");
-      if (rows[index]) {
-        const cb = rows[index].querySelector('input[role="combobox"], [class*="control"] input');
-        if (cb) return cb;
+
+    for (const el of candidates) {
+      const text = cleanText(el.textContent);
+
+      if (
+        text &&
+        text.length > 2 &&
+        /[\u0600-\u06FF]/.test(text) &&
+        !/^\d+$/.test(text) &&
+        !text.includes("المالك")
+      ) {
+        result["اسم المالك"] = text;
+        highlightElement(el);
+        break;
       }
     }
 
-    // 3. احتياطي: فحص عناصر combobox المحاطة بحقول directions
-    const allCombos = [...document.querySelectorAll('input[role="combobox"]')];
-    const dirCombos = allCombos.filter((c) => {
-      const container = c.closest("div.grid") || c.parentElement?.parentElement;
-      return container && container.querySelector('input[name*="directions."]');
-    });
-    if (dirCombos[index]) return dirCombos[index];
-
-    return null;
-  }
-
-  /**
-   * التعبئة الشاملة من بيانات الحافظة
-   */
-  async function fillFromClipboard() {
-    let text = "";
-
-    try {
-      text = await navigator.clipboard.readText();
-    } catch (error) {
-      console.error("❌ تعذر قراءة الحافظة:", error);
-      alert(
-        "تعذر قراءة الحافظة.\n\nتأكد أن الصفحة هي النافذة النشطة ثم اضغط بالزر الأيمن مرة أخرى."
-      );
-      return false;
-    }
-
-    if (!text) {
-      alert("الحافظة فارغة. انسخ بيانات الإضافة أولًا.");
-      return false;
-    }
-
-    const parsed = parseClipboardData(text);
-    if (!parsed) {
-      alert("تعذر تحليل بيانات الحافظة.");
-      return false;
-    }
-
-    // 1. الحقول البسيطة
-    const simpleFields = [
-      ["رقم القطعة بالمخطط", parsed.lot],
-      ["رقم المخطط", parsed.plan],
-      ["رقم البلوك", parsed.block],
-      ["النطاق الجغرافي لإسقاط مركاتور المستعرض العالمي", parsed.zone],
-      ["الحدود حسب طبقة الأراضي", parsed.area],
-      ["الحدود حسب الصك", parsed.deedArea]
-    ];
-
-    for (const [placeholder, value] of simpleFields) {
-      if (!value) continue;
-      const input = findInputByPlaceholder(
-        placeholder,
-        placeholder === "الحدود حسب الصك" ? "directions" : null
-      );
-      if (input) setNativeValue(input, value);
-    }
-
-    // وصف العقار
-    if (parsed.description) {
-      const descEl = document.querySelector(
-        'textarea[name="description"], textarea[placeholder="وصف العقار"]'
-      );
-      if (descEl) setNativeValue(descEl, parsed.description);
-    }
-
-    // 2. الاتجاهات (React Select)
-    const directionConfigs = [
-      { name: "الشمالية", data: parsed.directions.north },
-      { name: "الجنوبية", data: parsed.directions.south },
-      { name: "الشرقية", data: parsed.directions.east },
-      { name: "الغربية", data: parsed.directions.west }
-    ];
-
-    for (let i = 0; i < 4; i++) {
-      const combobox = getDirectionCombobox(i);
-      if (combobox) {
-        combobox.focus();
-        const dirArabic = directionConfigs[i].name;
-        setNativeValue(combobox, dirArabic);
-        await wait(60);
-        key(combobox, "ArrowDown");
-        await wait(60);
-        key(combobox, "Enter");
-        await wait(100);
-      }
-    }
-
-    // 3. أبعاد طبقة الأراضي
-    for (let i = 0; i < 4; i++) {
-      const d = directionConfigs[i].data;
-      if (!d) continue;
-
-      const lengthInput = document.querySelector(
-        `input[name="directions.${i}.asBuiltDimentionLength"]`
-      );
-      const totalInput = document.querySelector(
-        `input[name="directions.${i}.asBuiltDimentionTotal"]`
-      );
-
-      if (lengthInput && String(d.side).includes("+")) {
-        lengthInput.type = "text";
-      }
-
-      if (lengthInput) setNativeValue(lengthInput, d.side);
-      if (totalInput) setNativeValue(totalInput, d.total);
-    }
-
-    // 4. الإحداثيات (مع إضافة صفوف إن لزم)
-    const neededCoords = parsed.coordinates.length;
-    if (neededCoords === 0) return true;
-
-    function getCoordGroups() {
-      const map = {};
-      document.querySelectorAll('input[name*="coordinates."]').forEach((input) => {
-        const match = input.name.match(
-          /coordinates\.(\d+)\.(northCordinate|eastCordinate|northCoordinate|eastCoordinate|north|east)/i
-        );
-        if (!match) return;
-        const i = Number(match[1]);
-        if (!map[i]) map[i] = {};
-        const type = match[2].toLowerCase();
-        if (type.includes("north")) map[i].north = input;
-        else if (type.includes("east")) map[i].east = input;
-      });
-      return map;
-    }
-
-    let groups = getCoordGroups();
-
-    let safety = 0;
-    while (Object.keys(groups).length < neededCoords && safety < 30) {
-      safety++;
-      const addBtn = [...document.querySelectorAll("button, a, div, span")].find((b) => {
-        const txt = cleanText(b.textContent);
-        return (
-          txt.includes("إضافة المزيد من الإحداثيات") ||
-          txt.includes("اضافة المزيد") ||
-          txt.includes("+ إضافة")
-        );
-      });
-      if (!addBtn) break;
-      addBtn.click();
-
-      for (let i = 0; i < 10; i++) {
-        await wait(50);
-        groups = getCoordGroups();
-        if (Object.keys(groups).length >= neededCoords) break;
-      }
-    }
-
-    const indices = Object.keys(groups).map(Number).sort((a, b) => a - b);
-    for (let i = 0; i < neededCoords; i++) {
-      const group = groups[indices[i]];
-      if (!group) continue;
-      const coord = parsed.coordinates[i];
-      if (group.north && coord.n) setNativeValue(group.north, coord.n);
-      if (group.east && coord.e) setNativeValue(group.east, coord.e);
-    }
-
-    return true;
+    return result;
   }
 
   /* ============================================================
-   * زر الواجهة والتفاعل
+   * البيانات الأساسية
    * ============================================================ */
-  function createButton() {
-    if (document.getElementById("property-csv-export-container")) return;
 
-    const container = document.createElement("div");
-    container.id = "property-csv-export-container";
+  function extractBasicData() {
+    const result = {};
+
+    const mappings = [
+      ["رقم السجل العقاري", "رقم السجل العقاري"],
+      ["رقم القطعة بالمخطط", "رقم القطعة بالمخطط"],
+      ["رقم المخطط", "رقم المخطط"],
+      ["رقم البلوك", "رقم البلوك"],
+      [
+        "النطاق الجغرافي لإسقاط مركاتور المستعرض العالمي",
+        "النطاق الجغرافي لإسقاط مركاتور المستعرض العالمي"
+      ]
+    ];
+
+    for (const [field, placeholder] of mappings) {
+      const r = getValueByPlaceholder(placeholder);
+
+      result[field] = r.value;
+
+      if (r.value) {
+        console.log(`✅ ${field}:`, r.value);
+      }
+    }
+
+    /* الحدود حسب طبقة الأراضي */
+    const landBoundary = getValueByPlaceholder(
+      "الحدود حسب طبقة الأراضي"
+    );
+
+    result["الحدود حسب طبقة الأراضي"] = landBoundary.value;
+
+    /* الحدود حسب الصك - الحقل العام */
+    const deedBoundary = getValueByPlaceholder(
+      "الحدود حسب الصك",
+      "directions."
+    );
+
+    result["الحدود حسب الصك"] = deedBoundary.value;
+
+    /* وصف العقار */
+    const description =
+      document.querySelector('textarea[name="description"]') ||
+      document.querySelector('textarea[placeholder="وصف العقار"]');
+
+    if (description) {
+      result["وصف العقار"] = getInputValue(description);
+
+      if (result["وصف العقار"]) {
+        highlightElement(description);
+      }
+    } else {
+      result["وصف العقار"] = "";
+    }
+
+    /* المنطقة */
+    const region = getSelectByName("region");
+    result["المنطقة"] = region.value;
+
+    /* المدينة */
+    const city = getSelectByName("city");
+    result["اسم المدينة"] = city.value;
+
+    /* الحي */
+    const district = getSelectByName("district");
+    result["اسم الحي"] = district.value;
+
+    console.log("📦 البيانات الأساسية:", result);
+
+    return result;
+  }
+
+  /* ============================================================
+   * الاتجاهات
+   * ============================================================ */
+
+  const directionFields = [
+    ["deedBoundry", "الحدود حسب الصك"],
+    ["asBuiltBoundry", "الحدود حسب الطبيعة"],
+    ["deedDimentionLength", "الأبعاد حسب الصك (طول الضلع)"],
+    ["deedDimentionTotal", "الأبعاد حسب الصك (المجموع)"],
+    ["asBuiltDimentionLength", "الأبعاد حسب طبقة الأراضي (طول الضلع)"],
+    ["asBuiltDimentionTotal", "الأبعاد حسب طبقة الأراضي (المجموع)"]
+  ];
+
+  function extractDirections() {
+    const result = {};
+
+    for (let i = 0; i < 4; i++) {
+      const number = i + 1;
+
+      /* اتجاه */
+      const hidden = document.querySelector(
+        `input[name="directions.${i}.direction"]`
+      );
+
+      let directionValue = "";
+
+      if (hidden) {
+        const parent =
+          hidden.closest("div") ||
+          hidden.parentElement;
+
+        const selectValue =
+          parent?.querySelector('[class*="singleValue"]');
+
+        directionValue = cleanText(
+          selectValue?.textContent || ""
+        );
+
+        if (!directionValue) {
+          const numeric = getInputValue(hidden);
+
+          const directionMap = {
+            "1": "الشمالية",
+            "2": "الجنوبية",
+            "3": "الشرقية",
+            "4": "الغربية"
+          };
+
+          directionValue =
+            directionMap[numeric] || numeric;
+        }
+
+        if (directionValue) {
+          highlightElement(hidden.parentElement || hidden);
+        }
+      }
+
+      result[`اتجاه ${number}`] = directionValue;
+
+      /* باقي حقول الاتجاه */
+      for (const [namePart, label] of directionFields) {
+        const input = document.querySelector(
+          `input[name="directions.${i}.${namePart}"]`
+        );
+
+        const key = `${label} ${number}`;
+
+if (input) {
+  let value = getInputValue(input);
+
+  /*
+   * بعض حقول type="number" تعرض قيمة مركبة مثل:
+   * 67.50+55
+   * بينما input.value يكون فارغًا أو يعطي 0.
+   *
+   * نقرأ القيمة من React Hook Form control.
+   */
+  if (
+    !value ||
+    value === "0"
+  ) {
+    const fiberKey = Object.keys(input).find(
+      k => k.startsWith("__reactFiber$")
+    );
+
+    let fiber = fiberKey ? input[fiberKey] : null;
+
+    for (let level = 0; level < 10 && fiber; level++) {
+      const props = fiber.memoizedProps;
+
+      if (props?.control?._formValues) {
+        const formValues = props.control._formValues;
+
+        const direction = formValues?.directions?.[i];
+
+        if (
+          direction &&
+          direction[namePart] !== undefined &&
+          direction[namePart] !== null &&
+          String(direction[namePart]).trim() !== ""
+        ) {
+          value = cleanText(direction[namePart]);
+        }
+
+        break;
+      }
+
+      fiber = fiber.return;
+    }
+  }
+
+  result[key] = value;
+
+  console.log(
+    `🧪 ${input.name} DOM:`,
+    input.value,
+    "EXTRACTED:",
+    value
+  );
+
+  if (value) {
+    highlightElement(input);
+  }
+} else {
+  result[key] = "";
+}
+      }
+    }
+
+    console.log("🧭 الاتجاهات:", result);
+
+    return result;
+  }
+
+  /* ============================================================
+   * الإحداثيات
+   * ============================================================ */
+
+  function extractCoordinates() {
+    const result = {};
+
+    const groups = {};
+
+    const inputs = document.querySelectorAll(
+      'input[name*="coordinates."]'
+    );
+
+    inputs.forEach(input => {
+      const name = input.name || "";
+
+      const match = name.match(
+        /coordinates\.(\d+)\.(northCordinate|eastCordinate|northCoordinate|eastCoordinate|north|east)/i
+      );
+
+      if (!match) return;
+
+      const index = Number(match[1]);
+      let type = match[2].toLowerCase();
+
+      if (type.includes("north")) {
+        type = "north";
+      } else if (type.includes("east")) {
+        type = "east";
+      }
+
+      if (!groups[index]) {
+        groups[index] = {};
+      }
+
+      groups[index][type] = {
+        value: getInputValue(input),
+        element: input
+      };
+    });
+
+    const indices = Object.keys(groups)
+      .map(Number)
+      .sort((a, b) => a - b);
+
+    indices.forEach((index, position) => {
+      const number = position + 1;
+      const group = groups[index];
+
+      result[`الإحداثي الشمالي (N) ${number}`] =
+        group.north?.value || "";
+
+      result[`الإحداثي الشرقي (E) ${number}`] =
+        group.east?.value || "";
+
+      if (group.north?.value) {
+        highlightElement(group.north.element);
+      }
+
+      if (group.east?.value) {
+        highlightElement(group.east.element);
+      }
+    });
+
+    console.log("📍 الإحداثيات:", result);
+
+    return result;
+  }
+
+  /* ============================================================
+   * البحث عن القيم الظاهرة المهمة التي قد لا تكون في input
+   * ============================================================ */
+
+  function extractVisibleExtraData() {
+    const result = {};
+
+    /* اسم المدينة/الحي الظاهرين أعلى الصفحة */
+    const paragraphs = [...document.querySelectorAll("p")];
+
+    for (const p of paragraphs) {
+      const text = cleanText(p.textContent);
+
+      if (text === "اسم المدينة") {
+        const parent = p.parentElement;
+
+        const value = cleanText(
+          parent?.textContent
+            ?.replace("اسم المدينة", "")
+        );
+
+        if (
+          value &&
+          value !== "اسم المدينة"
+        ) {
+          result.__visibleCity = value;
+        }
+      }
+
+      if (text === "اسم الحي") {
+        const parent = p.parentElement;
+
+        const value = cleanText(
+          parent?.textContent
+            ?.replace("اسم الحي", "")
+        );
+
+        if (
+          value &&
+          value !== "اسم الحي"
+        ) {
+          result.__visibleDistrict = value;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /* ============================================================
+   * استخراج كل البيانات
+   * ============================================================ */
+
+  async function extractAllData() {
+    clearHighlights();
+
+    console.clear();
+
+    console.log(
+      "%c🔎 بدء استخراج بيانات العقار...",
+      "color:#16a34a;font-size:16px;font-weight:bold"
+    );
+
+    /*
+     * ننتظر قليلًا لأن React قد يكون ما زال يرسم الحقول
+     */
+    await wait(300);
+
+    const data = {};
+
+    /* رقم الطلب */
+    data["رقم الطلب"] = extractApplicationNumber();
+
+    /* البيانات الأساسية */
+    Object.assign(
+      data,
+      extractBasicData()
+    );
+
+    /* الصك */
+    Object.assign(
+      data,
+      extractDeedData()
+    );
+
+    /* المالك */
+    Object.assign(
+      data,
+      extractOwnerData()
+    );
+
+    /* الاتجاهات */
+    Object.assign(
+      data,
+      extractDirections()
+    );
+
+    /* الإحداثيات */
+    Object.assign(
+      data,
+      extractCoordinates()
+    );
+
+    /* ========================================================
+     * تصحيح احتياطي للمدينة والحي
+     * ======================================================== */
+
+    const extra = extractVisibleExtraData();
+
+    if (
+      (!data["اسم المدينة"] || data["اسم المدينة"] === "N/A") &&
+      extra.__visibleCity
+    ) {
+      data["اسم المدينة"] = extra.__visibleCity;
+    }
+
+    if (
+      (!data["اسم الحي"] || data["اسم الحي"] === "N/A") &&
+      extra.__visibleDistrict
+    ) {
+      data["اسم الحي"] = extra.__visibleDistrict;
+    }
+
+    /* ========================================================
+     * إعادة ترتيب البيانات
+     * ======================================================== */
+
+    const finalData = {};
+
+    for (const field of FINAL_FIELD_ORDER) {
+      const value = cleanText(data[field]);
+
+      finalData[field] =
+        value ||
+        "N/A";
+    }
+
+    /* الإحداثيات بعد الحقول الأساسية */
+    const coordinateKeys = Object.keys(data)
+      .filter(key =>
+        /^الإحداثي (الشمالي \(N\)|الشرقي \(E\)) \d+$/.test(key)
+      );
+
+    const coordinateNumbers = new Set();
+
+    for (const key of coordinateKeys) {
+      const match = key.match(/(\d+)$/);
+
+      if (match) {
+        coordinateNumbers.add(Number(match[1]));
+      }
+    }
+
+    [...coordinateNumbers]
+      .sort((a, b) => a - b)
+      .forEach(number => {
+        finalData[`الإحداثي الشمالي (N) ${number}`] =
+          cleanText(data[`الإحداثي الشمالي (N) ${number}`]) || "N/A";
+
+        finalData[`الإحداثي الشرقي (E) ${number}`] =
+          cleanText(data[`الإحداثي الشرقي (E) ${number}`]) || "N/A";
+      });
+
+    console.log(
+      "%c✅ البيانات النهائية",
+      "color:#16a34a;font-size:16px;font-weight:bold"
+    );
+
+    console.table(finalData);
+
+    return finalData;
+  }
+
+  /* ============================================================
+   * نسخ Excel — عمودين فقط
+   * ============================================================ */
+
+  async function copyToExcel(data) {
+    const rows = [];
+
+    /* رأس الجدول */
+    rows.push([
+      "الحقل",
+      "القيمة"
+    ]);
+
+    for (const [field, value] of Object.entries(data)) {
+      rows.push([
+        String(field || ""),
+        String(value || "")
+      ]);
+    }
+
+    const text = rows
+      .map(row =>
+        row
+          .map(value =>
+            String(value)
+              .replace(/\t/g, " ")
+              .replace(/\r?\n/g, " ")
+          )
+          .join("\t")
+      )
+      .join("\r\n");
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      const textarea = document.createElement("textarea");
+
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+
+      document.body.appendChild(textarea);
+
+      textarea.select();
+
+      document.execCommand("copy");
+
+      textarea.remove();
+    }
+
+    return text;
+  }
+
+  /* ============================================================
+   * نافذة صغيرة للنتيجة
+   * ============================================================ */
+
+  function showResult(data) {
+    const old = document.getElementById(
+      "property-extractor-result"
+    );
+
+    if (old) {
+      old.remove();
+    }
+
+    const box = document.createElement("div");
+
+    box.id = "property-extractor-result";
+
+    Object.assign(box.style, {
+      position: "fixed",
+      left: "20px",
+      top: "20px",
+      zIndex: "2147483647",
+      background: "#ffffff",
+      color: "#222",
+      padding: "14px 18px",
+      borderRadius: "12px",
+      border: "2px solid #16a34a",
+      boxShadow: "0 10px 30px rgba(0,0,0,.2)",
+      fontFamily: "Arial,sans-serif",
+      direction: "rtl",
+      minWidth: "260px",
+      fontSize: "14px"
+    });
+
+    const values = Object.values(data);
+
+    const valid = values.filter(
+      value =>
+        value &&
+        value !== "N/A"
+    ).length;
+
+    box.innerHTML = `
+      <div style="
+        font-weight:bold;
+        color:#16a34a;
+        font-size:16px;
+        margin-bottom:6px;
+      ">
+        ✅ تم استخراج البيانات
+      </div>
+
+      <div>
+        تم التعرف على <b>${valid}</b> قيمة
+      </div>
+
+      <div style="
+        margin-top:6px;
+        color:#666;
+        font-size:12px;
+      ">
+        البيانات منسوخة إلى الحافظة
+      </div>
+    `;
+
+    document.body.appendChild(box);
+
+    setTimeout(() => {
+      box.remove();
+    }, 3500);
+  }
+
+  /* ============================================================
+   * الزر
+   * ============================================================ */
+
+  function createButton() {
+    if (
+      document.getElementById(CONFIG.containerId)
+    ) {
+      return;
+    }
+
+    const container =
+      document.createElement("div");
+
+    container.id =
+      CONFIG.containerId;
 
     Object.assign(container.style, {
       position: "fixed",
-      left: localStorage.getItem("propertyCsvButtonLeft") || "20px",
-      bottom: localStorage.getItem("propertyCsvButtonBottom") || "20px",
-      zIndex: "2147483647",
-      userSelect: "none"
+      left:
+        localStorage.getItem(
+          "propertyExtractorLeft"
+        ) || "20px",
+      bottom:
+        localStorage.getItem(
+          "propertyExtractorBottom"
+        ) || "20px",
+      zIndex: "2147483647"
     });
 
-    const button = document.createElement("button");
-    button.id = "property-csv-export-button";
+    const button =
+      document.createElement("button");
+
+    button.id =
+      CONFIG.buttonId;
+
     button.textContent = "📥";
-    button.title = "يسار: استخراج البيانات | يمين: تعبئة الحقول من الحافظة";
-    button.setAttribute("data-mode", "extract");
+
+    button.title =
+      "اضغط لاستخراج البيانات ونسخها إلى Excel";
 
     Object.assign(button.style, {
-      width: "52px",
-      height: "52px",
-      padding: "0",
-      background: "transparent",
-      color: "#087f5b",
-      border: "0",
+      width: "54px",
+      height: "54px",
       borderRadius: "50%",
-      fontSize: "22px",
-      fontFamily: "Arial, sans-serif",
-      fontWeight: "bold",
+      border: "0",
+      background: "#ffffff",
+      color: "#087f5b",
+      fontSize: "24px",
       cursor: "grab",
-      boxShadow: "none",
+      boxShadow: "0 4px 15px rgba(0,0,0,.2)",
       display: "flex",
       alignItems: "center",
       justifyContent: "center"
     });
 
-    button.addEventListener("mouseenter", () => {
-      if (!button.disabled) button.style.background = "rgba(8,127,91,0.15)";
-    });
-    button.addEventListener("mouseleave", () => {
-      if (!button.disabled) button.style.background = "transparent";
-    });
+    /* ========================================================
+     * السحب
+     * ======================================================== */
 
-    button.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-    });
-
-    // السحب والإفلات
-    let isDragging = false;
+    let dragging = false;
+    let moved = false;
     let startX = 0;
     let startY = 0;
     let startLeft = 0;
     let startBottom = 0;
-    let dragMoved = false;
 
-    button.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
-      isDragging = true;
-      dragMoved = false;
-      button.style.cursor = "grabbing";
-      startX = event.clientX;
-      startY = event.clientY;
+    button.addEventListener(
+      "pointerdown",
+      event => {
+        if (event.button !== 0) return;
 
-      const rect = container.getBoundingClientRect();
-      startLeft = rect.left;
-      startBottom = window.innerHeight - rect.bottom;
+        dragging = true;
+        moved = false;
 
-      button.setPointerCapture(event.pointerId);
-    });
+        startX = event.clientX;
+        startY = event.clientY;
 
-    button.addEventListener("pointermove", (event) => {
-      if (!isDragging) return;
+        const rect =
+          container.getBoundingClientRect();
 
-      const deltaX = event.clientX - startX;
-      const deltaY = event.clientY - startY;
+        startLeft = rect.left;
+        startBottom =
+          window.innerHeight -
+          rect.bottom;
 
-      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
-        dragMoved = true;
-      }
+        button.style.cursor = "grabbing";
 
-      let newLeft = startLeft + deltaX;
-      let newBottom = startBottom - deltaY;
-
-      newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - container.offsetWidth));
-      newBottom = Math.max(0, Math.min(newBottom, window.innerHeight - container.offsetHeight));
-
-      container.style.left = `${newLeft}px`;
-      container.style.bottom = `${newBottom}px`;
-    });
-
-    button.addEventListener("pointerup", (event) => {
-      if (!isDragging) return;
-      isDragging = false;
-      button.style.cursor = "grab";
-
-      const rect = container.getBoundingClientRect();
-      localStorage.setItem("propertyCsvButtonLeft", `${Math.max(0, rect.left)}px`);
-      localStorage.setItem(
-        "propertyCsvButtonBottom",
-        `${Math.max(0, window.innerHeight - rect.bottom)}px`
-      );
-
-      try {
-        button.releasePointerCapture(event.pointerId);
-      } catch (e) {}
-    });
-
-    // الضغط بالزر الأيمن = تعبئة
-    button.addEventListener("contextmenu", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (button.disabled) return;
-
-      button.disabled = true;
-      button.textContent = "⏳";
-      button.style.color = "#8E44AD";
-
-      try {
-        const success = await fillFromClipboard();
-        if (success) {
-          button.textContent = "✅";
-          button.style.color = "#2f9e44";
-        } else {
-          button.textContent = "⚠️";
-          button.style.color = "#F39C12";
-        }
-      } catch (error) {
-        console.error("Fill Error:", error);
-        alert("حدث خطأ أثناء التعبئة:\n\n" + error.message);
-        button.textContent = "❌";
-        button.style.color = "#c92a2a";
-      }
-
-      setTimeout(() => {
-        button.textContent = "📥";
-        button.style.color = "#087f5b";
-        button.disabled = false;
-      }, 2500);
-    });
-
-    // الضغط بالزر الأيسر = استخراج البيانات
-    button.addEventListener("click", async () => {
-      if (dragMoved) {
-        dragMoved = false;
-        return;
-      }
-
-      if (button.disabled) return;
-
-      button.disabled = true;
-      button.textContent = "⏳";
-
-      try {
-        const finalData = await extractAllData();
-
-        const hasData = Object.values(finalData).some(
-          (v) => cleanText(v) !== "" && cleanText(v) !== "N/A"
+        button.setPointerCapture(
+          event.pointerId
         );
-        if (!hasData) {
-          throw new Error("لم يتم العثور على بيانات قابلة للتصدير من الصفحة.");
+      }
+    );
+
+    button.addEventListener(
+      "pointermove",
+      event => {
+        if (!dragging) return;
+
+        const dx =
+          event.clientX - startX;
+
+        const dy =
+          event.clientY - startY;
+
+        if (
+          Math.abs(dx) > 4 ||
+          Math.abs(dy) > 4
+        ) {
+          moved = true;
         }
 
-        await copyToClipboard(finalData);
+        let left =
+          startLeft + dx;
 
-        button.textContent = "✅";
-        button.style.color = "#2f9e44";
+        let bottom =
+          startBottom - dy;
 
-        setTimeout(() => {
-          button.textContent = "📥";
-          button.style.color = "#087f5b";
-          button.disabled = false;
-        }, 2500);
-      } catch (error) {
-        console.error("CSV Export Error:", error);
-        alert("حدث خطأ أثناء استخراج البيانات:\n\n" + error.message);
+        left = Math.max(
+          0,
+          Math.min(
+            left,
+            window.innerWidth -
+              container.offsetWidth
+          )
+        );
 
-        button.textContent = "❌";
-        button.style.color = "#c92a2a";
-        setTimeout(() => {
-          button.textContent = "📥";
-          button.style.color = "#087f5b";
-          button.disabled = false;
-        }, 2500);
+        bottom = Math.max(
+          0,
+          Math.min(
+            bottom,
+            window.innerHeight -
+              container.offsetHeight
+          )
+        );
+
+        container.style.left =
+          `${left}px`;
+
+        container.style.bottom =
+          `${bottom}px`;
       }
-    });
+    );
+
+    button.addEventListener(
+      "pointerup",
+      event => {
+        if (!dragging) return;
+
+        dragging = false;
+
+        button.style.cursor = "grab";
+
+        const rect =
+          container.getBoundingClientRect();
+
+        localStorage.setItem(
+          "propertyExtractorLeft",
+          `${rect.left}px`
+        );
+
+        localStorage.setItem(
+          "propertyExtractorBottom",
+          `${window.innerHeight - rect.bottom}px`
+        );
+
+        try {
+          button.releasePointerCapture(
+            event.pointerId
+          );
+        } catch {}
+      }
+    );
+
+    /* ========================================================
+     * الضغط
+     * ======================================================== */
+
+    button.addEventListener(
+      "click",
+      async () => {
+        if (moved) {
+          moved = false;
+          return;
+        }
+
+        if (button.disabled) return;
+
+        button.disabled = true;
+
+        button.textContent = "⏳";
+
+        try {
+          const data =
+            await extractAllData();
+
+          const count =
+            Object.values(data)
+              .filter(
+                value =>
+                  value &&
+                  value !== "N/A"
+              ).length;
+
+          if (!count) {
+            throw new Error(
+              "لم يتم العثور على أي بيانات."
+            );
+          }
+
+await copyToExcel(data);
+
+console.log("✅ تم نسخ بيانات الصفحة الأولى");
+
+/* ========================================================
+ * الانتقال إلى صفحة تفاصيل الصك
+ * ======================================================== */
+
+const deedDetailsBtn = [...document.querySelectorAll("div,button")]
+  .find(el => {
+    const text = cleanText(el.textContent);
+
+    return (
+      text === "تفاصيل الصك" &&
+      (
+        el.classList.contains("cursor-pointer") ||
+        el.tagName === "BUTTON" ||
+        el.querySelector(".cursor-pointer")
+      )
+    );
+  });
+
+if (!deedDetailsBtn) {
+  console.error(
+    "❌ لم يتم العثور على عنصر تفاصيل الصك"
+  );
+
+  throw new Error(
+    "زر تفاصيل الصك غير موجود في الصفحة الحالية"
+  );
+}
+
+console.log(
+  "➡️ تم العثور على تفاصيل الصك:",
+  deedDetailsBtn
+);
+
+/* العنصر الفعلي الذي عليه cursor-pointer */
+const clickable =
+  deedDetailsBtn.classList.contains("cursor-pointer")
+    ? deedDetailsBtn
+    : deedDetailsBtn.querySelector(".cursor-pointer") ||
+      deedDetailsBtn;
+
+/* التأكد من ظهوره */
+clickable.scrollIntoView({
+  behavior: "instant",
+  block: "center"
+});
+
+await wait(300);
+
+/*
+ * إرسال أحداث الماوس كاملة لأن الصفحة تعتمد
+ * على React في التعامل مع الضغط.
+ */
+clickable.dispatchEvent(
+  new PointerEvent("pointerdown", {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    pointerId: 1,
+    pointerType: "mouse",
+    isPrimary: true,
+    buttons: 1
+  })
+);
+
+clickable.dispatchEvent(
+  new MouseEvent("mousedown", {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    buttons: 1
+  })
+);
+
+clickable.dispatchEvent(
+  new PointerEvent("pointerup", {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    pointerId: 1,
+    pointerType: "mouse",
+    isPrimary: true,
+    buttons: 0
+  })
+);
+
+clickable.dispatchEvent(
+  new MouseEvent("mouseup", {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    buttons: 0
+  })
+);
+
+/* الضغط الأساسي */
+clickable.click();
+
+console.log(
+  "➡️ تم الضغط على تفاصيل الصك، انتظار الصفحة الثانية..."
+);
+
+/* انتظار انتقال React وإعادة رسم الصفحة */
+let ownerPageReady = false;
+
+for (let attempt = 0; attempt < 20; attempt++) {
+  await wait(500);
+
+  const ownerIdentity =
+    document.querySelectorAll("td, p, span");
+
+  const hasIdentity = [...ownerIdentity].some(el =>
+    /^\d{10}$/.test(cleanText(el.textContent))
+  );
+
+  const hasOwnerName = [
+    ...document.querySelectorAll(
+      "td p.font-bold, td p[class*='font-bold'], td p[class*='text-[#4A6BA3]']"
+    )
+  ].some(el => {
+    const text = cleanText(el.textContent);
+
+    return (
+      text.length > 2 &&
+      /[\u0600-\u06FF]/.test(text) &&
+      !/^\d+$/.test(text) &&
+      !text.includes("المالك")
+    );
+  });
+
+  if (hasIdentity || hasOwnerName) {
+    ownerPageReady = true;
+    break;
+  }
+}
+
+if (!ownerPageReady) {
+  console.warn(
+    "⚠️ لم تظهر بيانات المالك بعد الانتقال، سيتم محاولة استخراجها على أي حال."
+  );
+}
+
+/* ========================================================
+ * استخراج بيانات المالك والصك من الصفحة الثانية
+ * ======================================================== */
+
+const ownerData = extractOwnerData();
+const deedData = extractDeedData();
+
+Object.assign(
+  data,
+  ownerData,
+  deedData
+);
+
+console.log(
+  "👤 بيانات المالك بعد الانتقال:",
+  ownerData
+);
+
+console.log(
+  "📜 بيانات الصك بعد الانتقال:",
+  deedData
+);
+
+/* إعادة نسخ البيانات كاملة بعد إضافة بيانات الصفحة الثانية */
+await copyToExcel(data);
+
+console.log(
+  "✅ تم نسخ البيانات النهائية بعد الانتقال"
+);
+
+showResult(data);
+
+button.textContent = "✅";
+
+          button.style.color =
+            "#16a34a";
+
+        } catch (error) {
+          console.error(
+            "❌ Extraction Error:",
+            error
+          );
+
+          button.textContent =
+            "❌";
+
+          button.style.color =
+            "#dc2626";
+
+          alert(
+            "حدث خطأ أثناء استخراج البيانات:\n\n" +
+            error.message
+          );
+
+        } finally {
+          setTimeout(() => {
+            button.textContent =
+              "📥";
+
+            button.style.color =
+              "#087f5b";
+
+            button.disabled =
+              false;
+          }, 2500);
+        }
+      }
+    );
 
     container.appendChild(button);
+
     document.body.appendChild(container);
   }
+
+  /* ============================================================
+   * تشغيل
+   * ============================================================ */
 
   function init() {
     if (!document.body) {
       setTimeout(init, 500);
       return;
     }
+ 
     createButton();
+
+    console.log(
+      "%c✅ Property Extractor Loaded",
+      "color:#16a34a;font-size:16px;font-weight:bold"
+    );
+
+    console.log(
+      "اضغط على 📥 لاستخراج البيانات."
+    );
   }
 
   init();
+
 })();
