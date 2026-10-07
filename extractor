@@ -1,6 +1,4 @@
-إليك الكود بعد حذف جميع تقارير الكونسول وجميع أكواد التمييز بالألوان:
 
-```javascript
 (() => {
   "use strict";
 
@@ -53,17 +51,15 @@
     "رقم الطلب",
     "رقم صك وزارة العدل",
     "تاريخ الصك",
-    "اسم المالك",
-    "رقم الهوية",
+
 
     "رقم السجل العقاري",
     "رقم القطعة بالمخطط",
     "رقم المخطط",
     "رقم البلوك",
 
-    "المنطقة",
-    "اسم المدينة",
     "اسم الحي",
+    "اسم المدينة",
 
     "الحدود حسب طبقة الأراضي",
     "الحدود حسب الصك",
@@ -323,93 +319,86 @@
    * بيانات الصك
    * ============================================================ */
 
-  function extractDeedData() {
-    const result = {
-      "رقم صك وزارة العدل": "",
-      "تاريخ الصك": ""
-    };
+function extractDeedData() {
+  const result = {
+    "رقم صك وزارة العدل": "",
+    "تاريخ الصك": ""
+  };
 
-    const deedRegex = /^\d+[\/\\]\d+$/;
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  // ============================================================
+  // رقم صك وزارة العدل
+  // المصدر المؤكد حسب الـ Selector
+  // ============================================================
 
-    const tables = document.querySelectorAll("table");
+  const deedCell = document.querySelector(
+    'table.borderTable-new tbody.overflow-y-auto tr.cursor-pointer td.p-3.font-normal.text-\\[14px\\].leading-5.text-center'
+  );
 
-    for (const table of tables) {
-      const rows = table.querySelectorAll("tr");
+  if (deedCell) {
+    const value = cleanText(deedCell.textContent);
 
-      for (const row of rows) {
-        const cells = [...row.querySelectorAll("td, th")]
-          .map(cell => ({
-            text: cleanText(cell.textContent),
-            el: cell
-          }))
-          .filter(x => x.text);
-
-        for (const cell of cells) {
-          if (!result["رقم صك وزارة العدل"] && deedRegex.test(cell.text)) {
-            result["رقم صك وزارة العدل"] = cell.text;
-          }
-
-          if (!result["تاريخ الصك"] && dateRegex.test(cell.text)) {
-            result["تاريخ الصك"] = cell.text;
-          }
-        }
-
-        if (
-          result["رقم صك وزارة العدل"] &&
-          result["تاريخ الصك"]
-        ) {
-          return result;
-        }
-      }
+    if (value) {
+      result["رقم صك وزارة العدل"] = value;
     }
-
-    if (!result["رقم صك وزارة العدل"]) {
-      const all = document.querySelectorAll("td, span, p, div");
-
-      for (const el of all) {
-        const text = cleanText(el.textContent);
-
-        if (
-          text.length < 50 &&
-          deedRegex.test(text)
-        ) {
-          result["رقم صك وزارة العدل"] = text;
-          break;
-        }
-      }
-    }
-
-    if (!result["تاريخ الصك"]) {
-      const all = document.querySelectorAll("td, span, p, div");
-
-      for (const el of all) {
-        const text = cleanText(el.textContent);
-
-        if (
-          text.length < 30 &&
-          dateRegex.test(text)
-        ) {
-          result["تاريخ الصك"] = text;
-          break;
-        }
-      }
-    }
-
-    return result;
   }
+
+  // ============================================================
+  // إذا لم يعمل الـ selector السابق
+  // نستخدم XPath
+  // ============================================================
+
+  if (!result["رقم صك وزارة العدل"]) {
+    const xpath =
+      '/html[1]/body[1]/div[1]/div[1]/div[2]/div[1]/div[6]/div[7]/div[2]/table[1]/tbody[1]/tr[1]/td[1]';
+
+    const xpathResult = document.evaluate(
+      xpath,
+      document,
+      null,
+      XPathResult.FIRST_ORDERED_NODE_TYPE,
+      null
+    );
+
+    const cell = xpathResult.singleNodeValue;
+
+    if (cell) {
+      const value = cleanText(cell.textContent);
+
+      if (value) {
+        result["رقم صك وزارة العدل"] = value;
+      }
+    }
+  }
+
+  // ============================================================
+  // تاريخ الصك
+  // ============================================================
+
+  const dateCells = document.querySelectorAll("td");
+
+  for (const td of dateCells) {
+    const value = cleanText(td.textContent);
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      result["تاريخ الصك"] = value;
+      break;
+    }
+  }
+
+  return result;
+}
 
   /* ============================================================
    * بيانات المالك
    * ============================================================ */
 
   function extractOwnerData() {
-    const result = {
-      "اسم المالك": "",
-      "رقم الهوية": ""
-    };
+    const result = {};
 
     const identityRegex = /^\d{10}$/;
+
+    const identities = [];
+    const names = [];
 
     const cells = document.querySelectorAll("td, p, span");
 
@@ -418,9 +407,9 @@
 
       if (
         identityRegex.test(text) &&
-        !result["رقم الهوية"]
+        !identities.includes(text)
       ) {
-        result["رقم الهوية"] = text;
+        identities.push(text);
       }
     }
 
@@ -436,11 +425,26 @@
         text.length > 2 &&
         /[\u0600-\u06FF]/.test(text) &&
         !/^\d+$/.test(text) &&
-        !text.includes("المالك")
+        !text.includes("المالك") &&
+        !names.includes(text)
       ) {
-        result["اسم المالك"] = text;
-        break;
+        names.push(text);
       }
+    }
+
+    const maxOwners = Math.max(
+      names.length,
+      identities.length
+    );
+
+    for (let i = 0; i < maxOwners; i++) {
+      const number = i + 1;
+
+      result[`اسم المالك ${number}`] =
+        names[i] || "";
+
+      result[`رقم الهوية ${number}`] =
+        identities[i] || "";
     }
 
     return result;
@@ -775,12 +779,41 @@
     const finalData = {};
 
     for (const field of FINAL_FIELD_ORDER) {
-      const value = cleanText(data[field]);
+      const value = data[field];
 
       finalData[field] =
-        value ||
-        "N/A";
+        cleanText(value) || "N/A";
     }
+
+    /* ========================================================
+     * إضافة المالكين بشكل ديناميكي
+     * ======================================================== */
+
+    const ownerNumbers = new Set();
+
+    Object.keys(data).forEach(key => {
+      const match = key.match(
+        /^(اسم المالك|رقم الهوية) (\d+)$/
+      );
+
+      if (match) {
+        ownerNumbers.add(Number(match[2]));
+      }
+    });
+
+    [...ownerNumbers]
+      .sort((a, b) => a - b)
+      .forEach(number => {
+        finalData[`اسم المالك ${number}`] =
+          cleanText(
+            data[`اسم المالك ${number}`]
+          ) || "N/A";
+
+        finalData[`رقم الهوية ${number}`] =
+          cleanText(
+            data[`رقم الهوية ${number}`]
+          ) || "N/A";
+      });
 
     const coordinateKeys = Object.keys(data)
       .filter(key =>
@@ -801,10 +834,14 @@
       .sort((a, b) => a - b)
       .forEach(number => {
         finalData[`الإحداثي الشمالي (N) ${number}`] =
-          cleanText(data[`الإحداثي الشمالي (N) ${number}`]) || "N/A";
+          cleanText(
+            data[`الإحداثي الشمالي (N) ${number}`]
+          ) || "N/A";
 
         finalData[`الإحداثي الشرقي (E) ${number}`] =
-          cleanText(data[`الإحداثي الشرقي (E) ${number}`]) || "N/A";
+          cleanText(
+            data[`الإحداثي الشرقي (E) ${number}`]
+          ) || "N/A";
       });
 
     return finalData;
@@ -823,10 +860,19 @@
     ]);
 
     for (const [field, value] of Object.entries(data)) {
-      rows.push([
-        String(field || ""),
-        String(value || "")
-      ]);
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          rows.push([
+            String(field || ""),
+            String(item || "")
+          ]);
+        }
+      } else {
+        rows.push([
+          String(field || ""),
+          String(value || "")
+        ]);
+      }
     }
 
     const text = rows
@@ -939,6 +985,15 @@
    * ============================================================ */
 
   function createButton() {
+
+    /* ========================================================
+     * إظهار الزر فقط في إحدى صفحتي الاستخراج
+     * ======================================================== */
+
+    if (!isExtractionPage()) {
+      return;
+    }
+
     if (
       document.getElementById(CONFIG.containerId)
     ) {
@@ -1127,151 +1182,128 @@
         button.textContent = "⏳";
 
         try {
-          const data =
-            await extractAllData();
 
-          const count =
-            Object.values(data)
-              .filter(
-                value =>
-                  value &&
-                  value !== "N/A"
-              ).length;
+          /* ======================================================
+           * المرحلة الأولى اليدوية:
+           * صفحة تفاصيل الصك
+           * ====================================================== */
 
-          if (!count) {
-            throw new Error(
-              "لم يتم العثور على أي بيانات."
-            );
-          }
+          if (isDeedDetailsPage()) {
 
-          await copyToExcel(data);
+            const deedData = extractDeedData();
+            const ownerData = extractOwnerData();
 
-          /* ========================================================
-           * الانتقال إلى صفحة تفاصيل الصك
-           * ======================================================== */
+            const data = {
+              "رقم صك وزارة العدل":
+                cleanText(
+                  deedData["رقم صك وزارة العدل"] || ""
+                ) || "N/A",
 
-          const deedDetailsBtn = [...document.querySelectorAll("div,button")]
-            .find(el => {
-              const text = cleanText(el.textContent);
+              "تاريخ الصك":
+                cleanText(
+                  deedData["تاريخ الصك"] || ""
+                ) || "N/A"
+            };
 
-              return (
-                text === "تفاصيل الصك" &&
-                (
-                  el.classList.contains("cursor-pointer") ||
-                  el.tagName === "BUTTON" ||
-                  el.querySelector(".cursor-pointer")
-                )
+            const ownerNumbers = new Set();
+
+            Object.keys(ownerData).forEach(key => {
+              const match = key.match(
+                /^(اسم المالك|رقم الهوية) (\d+)$/
               );
+
+              if (match) {
+                ownerNumbers.add(
+                  Number(match[2])
+                );
+              }
             });
 
-          if (!deedDetailsBtn) {
-            throw new Error(
-              "زر تفاصيل الصك غير موجود في الصفحة الحالية"
-            );
+            [...ownerNumbers]
+              .sort((a, b) => a - b)
+              .forEach(number => {
+
+                data[`اسم المالك ${number}`] =
+                  cleanText(
+                    ownerData[
+                      `اسم المالك ${number}`
+                    ] || ""
+                  ) || "N/A";
+
+                data[`رقم الهوية ${number}`] =
+                  cleanText(
+                    ownerData[
+                      `رقم الهوية ${number}`
+                    ] || ""
+                  ) || "N/A";
+              });
+
+            await copyToExcel(data);
+
+            showResult(data);
+
           }
 
-          const clickable =
-            deedDetailsBtn.classList.contains("cursor-pointer")
-              ? deedDetailsBtn
-              : deedDetailsBtn.querySelector(".cursor-pointer") ||
-                deedDetailsBtn;
+          /* ======================================================
+           * المرحلة الثانية اليدوية:
+           * صفحة بيانات العقار
+           * ====================================================== */
 
-          clickable.scrollIntoView({
-            behavior: "instant",
-            block: "center"
-          });
+          else if (isPropertyDataPage()) {
 
-          await wait(300);
+            const allData =
+              await extractAllData();
 
-          clickable.dispatchEvent(
-            new PointerEvent("pointerdown", {
-              bubbles: true,
-              cancelable: true,
-              view: window,
-              pointerId: 1,
-              pointerType: "mouse",
-              isPrimary: true,
-              buttons: 1
-            })
-          );
+            const data = {};
 
-          clickable.dispatchEvent(
-            new MouseEvent("mousedown", {
-              bubbles: true,
-              cancelable: true,
-              view: window,
-              buttons: 1
-            })
-          );
+            for (
+              const [field, value]
+              of Object.entries(allData)
+            ) {
 
-          clickable.dispatchEvent(
-            new PointerEvent("pointerup", {
-              bubbles: true,
-              cancelable: true,
-              view: window,
-              pointerId: 1,
-              pointerType: "mouse",
-              isPrimary: true,
-              buttons: 0
-            })
-          );
+              /* استبعاد بيانات الصك */
+              if (
+                field === "رقم صك وزارة العدل" ||
+                field === "تاريخ الصك"
+              ) {
+                continue;
+              }
 
-          clickable.dispatchEvent(
-            new MouseEvent("mouseup", {
-              bubbles: true,
-              cancelable: true,
-              view: window,
-              buttons: 0
-            })
-          );
+              /* استبعاد بيانات الملاك */
+              if (
+                /^اسم المالك \d+$/.test(field) ||
+                /^رقم الهوية \d+$/.test(field)
+              ) {
+                continue;
+              }
 
-          clickable.click();
-
-          let ownerPageReady = false;
-
-          for (let attempt = 0; attempt < 20; attempt++) {
-            await wait(500);
-
-            const ownerIdentity =
-              document.querySelectorAll("td, p, span");
-
-            const hasIdentity = [...ownerIdentity].some(el =>
-              /^\d{10}$/.test(cleanText(el.textContent))
-            );
-
-            const hasOwnerName = [
-              ...document.querySelectorAll(
-                "td p.font-bold, td p[class*='font-bold'], td p[class*='text-[#4A6BA3]']"
-              )
-            ].some(el => {
-              const text = cleanText(el.textContent);
-
-              return (
-                text.length > 2 &&
-                /[\u0600-\u06FF]/.test(text) &&
-                !/^\d+$/.test(text) &&
-                !text.includes("المالك")
-              );
-            });
-
-            if (hasIdentity || hasOwnerName) {
-              ownerPageReady = true;
-              break;
+              data[field] = value;
             }
+
+            const count =
+              Object.values(data)
+                .filter(
+                  value =>
+                    value &&
+                    value !== "N/A"
+                ).length;
+
+            if (!count) {
+              throw new Error(
+                "لم يتم العثور على أي بيانات."
+              );
+            }
+
+            await copyToExcel(data);
+
+            showResult(data);
           }
 
-          const ownerData = extractOwnerData();
-          const deedData = extractDeedData();
-
-          Object.assign(
-            data,
-            ownerData,
-            deedData
-          );
-
-          await copyToExcel(data);
-
-          showResult(data);
+          else {
+            throw new Error(
+              "هذه الصفحة ليست صفحة تفاصيل الصك أو صفحة بيانات العقار."
+            );
+          }
 
           button.textContent = "✅";
 
@@ -1279,6 +1311,7 @@
             "#16a34a";
 
         } catch (error) {
+
           button.textContent =
             "❌";
 
@@ -1291,7 +1324,9 @@
           );
 
         } finally {
+
           setTimeout(() => {
+
             button.textContent =
               "📥";
 
@@ -1300,6 +1335,7 @@
 
             button.disabled =
               false;
+
           }, 2500);
         }
       }
@@ -1311,6 +1347,162 @@
   }
 
   /* ============================================================
+   * تحديد صفحات الاستخراج
+   * ============================================================ */
+
+  function isDeedDetailsPage() {
+    /* ========================================================
+     * صفحة تفاصيل الصك
+     *
+     * نتحقق من وجود عناصر صفحة الصك نفسها،
+     * وليس من قيمة واحدة فقط.
+     * ======================================================== */
+
+    const deedTable = document.querySelector(
+      "table.borderTable-new"
+    );
+
+    const deedData = extractDeedData();
+    const ownerData = extractOwnerData();
+
+    const deedNumber = cleanText(
+      deedData["رقم صك وزارة العدل"] || ""
+    );
+
+    const deedDate = cleanText(
+      deedData["تاريخ الصك"] || ""
+    );
+
+    const ownerName = cleanText(
+      ownerData["اسم المالك 1"] || ""
+    );
+
+    const ownerIdentity = cleanText(
+      ownerData["رقم الهوية 1"] || ""
+    );
+
+    return (
+      !!deedTable &&
+      !!deedNumber &&
+      !!deedDate &&
+      !!ownerName &&
+      !!ownerIdentity
+    );
+  }
+
+  function isPropertyDataPage() {
+    /* ========================================================
+     * صفحة بيانات العقار
+     *
+     * نعتمد على وجود حقول العقار الموجودة أصلًا
+     * في الكود.
+     * ======================================================== */
+
+    const propertyFields = [
+      "رقم السجل العقاري",
+      "رقم القطعة بالمخطط",
+      "رقم المخطط",
+      "رقم البلوك",
+      "الحدود حسب طبقة الأراضي",
+      "وصف العقار"
+    ];
+
+    let found = 0;
+
+    for (const field of propertyFields) {
+      const result =
+        getValueByPlaceholder(field);
+
+      if (result.element) {
+        found++;
+      }
+    }
+
+    /* يكفي وجود حقلين أو أكثر للتأكد من الصفحة */
+    return found >= 2;
+  }
+
+  function isExtractionPage() {
+    return (
+      isDeedDetailsPage() ||
+      isPropertyDataPage()
+    );
+  }
+
+  function isExtractionPage() {
+    return (
+      isDeedDetailsPage() ||
+      isPropertyDataPage()
+    );
+  }
+
+  function startAutoWatcher() {
+
+    /* ========================================================
+     * مراقبة تغير الصفحة لإظهار/إخفاء الزر فقط
+     *
+     * لا يوجد أي نسخ تلقائي هنا.
+     * ======================================================== */
+
+    let updateTimer = null;
+
+    const updateButton = () => {
+
+      clearTimeout(updateTimer);
+
+      updateTimer = setTimeout(() => {
+
+        const existing =
+          document.getElementById(
+            CONFIG.containerId
+          );
+
+        const validPage =
+          isExtractionPage();
+
+        /* ----------------------------------------------------
+         * إذا كانت الصفحة المطلوبة
+         * والزر غير موجود → أنشئه
+         * ---------------------------------------------------- */
+
+        if (
+          validPage &&
+          !existing
+        ) {
+          createButton();
+          return;
+        }
+
+        /* ----------------------------------------------------
+         * إذا خرجنا من الصفحتين
+         * → احذف الزر
+         * ---------------------------------------------------- */
+
+        if (
+          !validPage &&
+          existing
+        ) {
+          existing.remove();
+        }
+
+      }, 300);
+    };
+
+    const observer =
+      new MutationObserver(() => {
+        updateButton();
+      });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    /* فحص أولي */
+    updateButton();
+  }
+
+  /* ============================================================
    * تشغيل
    * ============================================================ */
 
@@ -1319,39 +1511,12 @@
       setTimeout(init, 500);
       return;
     }
- 
+
     createButton();
+
+    startAutoWatcher();
   }
 
   init();
 
 })();
-```
-
-ملخص التغييرات:
-
-1. حذف تقارير الكونسول:
-
-· console.log في extractBasicData
-· console.log("📦 البيانات الأساسية:", result)
-· console.log داخل حلقة الاتجاهات (🧪 ...)
-· console.log("🧭 الاتجاهات:", result)
-· console.log("📍 الإحداثيات:", result)
-· console.clear() و console.log في بداية extractAllData
-· console.log و console.table في نهاية extractAllData
-· console.log("✅ تم نسخ بيانات الصفحة الأولى")
-· console.error و console.log المتعلقة بزر تفاصيل الصك
-· console.log("➡️ تم الضغط على تفاصيل الصك...")
-· console.warn عند عدم ظهور بيانات المالك
-· console.log لبيانات المالك والصك بعد الانتقال
-· console.log("✅ تم نسخ البيانات النهائية...")
-· console.error في catch
-· console.log في init
-
-2. حذف التمييز بالألوان:
-
-· حذف highlightColor, highlightBackground, highlightShadow من CONFIG
-· حذف كائن highlightedElements بالكامل
-· حذف دالتي highlightElement و clearHighlights
-· حذف جميع استدعاءات highlightElement في كل الدوال
-· حذف استدعاء clearHighlights() في بداية extractAllData
